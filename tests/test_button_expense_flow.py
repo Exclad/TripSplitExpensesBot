@@ -63,6 +63,29 @@ async def test_button_expense_defaults_to_country_currency_and_saves(trip_reposi
     assert expense.base_amount_minor == 350
 
 
+async def test_split_member_toggle_edits_existing_selector_message(trip_repository, member_repository, expense_repository):
+    _trip_with_members(trip_repository, member_repository)
+    provider = FixedExchangeRateProvider({("KRW", "SGD", date.today().isoformat()): Decimal("0.001")})
+    context = _context(trip_repository, member_repository, expense_repository, provider)
+
+    await start_button_expense(fake_message_update("Add expense", user=fake_user(101, "alex", "alex")), context)
+    await exact_amount_message(fake_message_update("3500", user=fake_user(101, "alex", "alex")), context)
+    await exact_amount_message(fake_message_update("lunch", user=fake_user(101, "alex", "alex")), context)
+    category = fake_callback_update("expense:category:Food", user=fake_user(101, "alex", "alex"))
+    await expense_callback(category, context)
+    selector = category.callback_query.message.replies[0]["reply_markup"]
+    sam_button = selector.inline_keyboard[1][0]
+
+    toggle = fake_callback_update(sam_button.callback_data, user=fake_user(101, "alex", "alex"))
+    await expense_callback(toggle, context)
+
+    assert toggle.callback_query.message.replies == []
+    assert toggle.callback_query.message.edits[0]["text"] == "Who should split this?"
+    updated_buttons = toggle.callback_query.message.edits[0]["reply_markup"].inline_keyboard
+    assert updated_buttons[0][0].text == "✓ alex"
+    assert updated_buttons[1][0].text == "sam"
+
+
 async def test_button_expense_can_switch_to_base_currency_before_amount(trip_repository, member_repository, expense_repository):
     _trip_with_members(trip_repository, member_repository)
     context = _context(trip_repository, member_repository, expense_repository)

@@ -108,6 +108,15 @@ def saved_keyboard(expense_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def saved_details_keyboard(expense_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Override rate", callback_data=f"expense:override-rate:{expense_id}")],
+            [InlineKeyboardButton("Home", callback_data="expense:home")],
+        ]
+    )
+
+
 def exchange_override_keyboard(expense_id: str | None = None) -> InlineKeyboardMarkup:
     suffix = f":{expense_id}" if expense_id else ""
     return InlineKeyboardMarkup(
@@ -133,6 +142,18 @@ def member_toggle_keyboard(action_prefix: str, members: list[Member], selected_i
         rows.append([InlineKeyboardButton(f"{marker}{member.display_name}", callback_data=f"{action_prefix}:{member.id}")])
     rows.append([InlineKeyboardButton("Done", callback_data=done_callback)])
     return InlineKeyboardMarkup(rows)
+
+
+async def _edit_or_reply_text(query: Any, text: str, reply_markup: InlineKeyboardMarkup) -> None:
+    edit_query = getattr(query, "edit_message_text", None)
+    if callable(edit_query):
+        await edit_query(text, reply_markup=reply_markup)
+        return
+    edit_message = getattr(query.message, "edit_text", None)
+    if callable(edit_message):
+        await edit_message(text, reply_markup=reply_markup)
+        return
+    await query.message.reply_text(text, reply_markup=reply_markup)
 
 
 async def add_expense(update: Any, context: Any) -> None:
@@ -285,6 +306,10 @@ async def expense_callback(update: Any, context: Any) -> None:
     query = update.callback_query
     data = query.data or ""
     draft = _drafts(context).get(_draft_key(update))
+    if data == "expense:home":
+        await query.answer("Home")
+        await query.message.reply_text("Main buttons are ready.", reply_markup=menu_for_chat(context, update.effective_chat.id))
+        return
     if data.startswith("expense:details:"):
         await _show_saved_details(query, context, data.rsplit(":", 1)[-1])
         return
@@ -381,7 +406,7 @@ async def expense_callback(update: Any, context: Any) -> None:
             selected.add(member_id)
         draft["split_member_ids"] = list(selected)
         await query.answer("Updated")
-        await _ask_split_members(query, context, draft)
+        await _ask_split_members(query, context, draft, edit=True)
     elif data == "expense:split-done":
         if not draft.get("split_member_ids"):
             await query.answer("Choose at least one person.")
@@ -421,9 +446,10 @@ async def expense_callback(update: Any, context: Any) -> None:
         draft["payer_member_ids"] = list(selected)
         members = _all_members(context, draft)
         await query.answer("Updated")
-        await query.message.reply_text(
+        await _edit_or_reply_text(
+            query,
             "Who paid?",
-            reply_markup=member_toggle_keyboard("expense:payer-toggle", members, selected, "expense:payers-done"),
+            member_toggle_keyboard("expense:payer-toggle", members, selected, "expense:payers-done"),
         )
     elif data == "expense:payers-done":
         if not draft.get("payer_member_ids"):
@@ -454,7 +480,7 @@ async def expense_callback(update: Any, context: Any) -> None:
             selected.add(member_id)
         draft["current_item_member_ids"] = list(selected)
         await query.answer("Updated")
-        await _reply_item_member_picker(query, context, draft)
+        await _reply_item_member_picker(query, context, draft, edit=True)
     elif data == "expense:item-members-done":
         if not draft.get("current_item_member_ids"):
             await query.answer("Choose at least one person.")
@@ -904,17 +930,18 @@ async def _button_expense_description_message(update: Any, context: Any, draft: 
     await update.message.reply_text("Pick a category.", reply_markup=category_keyboard(custom_categories))
 
 
-async def _ask_split_members(query: Any, context: Any, draft: dict) -> None:
+async def _ask_split_members(query: Any, context: Any, draft: dict, *, edit: bool = False) -> None:
     members = _all_members(context, draft)
-    await query.message.reply_text(
-        "Who should split this?",
-        reply_markup=member_toggle_keyboard(
-            "expense:split-toggle",
-            members,
-            set(draft.get("split_member_ids") or []),
-            "expense:split-done",
-        ),
+    keyboard = member_toggle_keyboard(
+        "expense:split-toggle",
+        members,
+        set(draft.get("split_member_ids") or []),
+        "expense:split-done",
     )
+    if edit:
+        await _edit_or_reply_text(query, "Who should split this?", keyboard)
+    else:
+        await query.message.reply_text("Who should split this?", reply_markup=keyboard)
 
 
 async def _start_saved_override(update: Any, context: Any, expense_id: str, flow: str) -> None:
@@ -970,16 +997,17 @@ async def _saved_override_message(update: Any, context: Any, draft: dict) -> Non
     await update.message.reply_text(f"Updated rate for {updated.description}.")
 
 
-async def _reply_item_member_picker(query: Any, context: Any, draft: dict) -> None:
-    await query.message.reply_text(
-        "Who shared this item?",
-        reply_markup=member_toggle_keyboard(
-            "expense:item-member-toggle",
-            _all_members(context, draft),
-            set(draft.get("current_item_member_ids") or []),
-            "expense:item-members-done",
-        ),
+async def _reply_item_member_picker(query: Any, context: Any, draft: dict, *, edit: bool = False) -> None:
+    keyboard = member_toggle_keyboard(
+        "expense:item-member-toggle",
+        _all_members(context, draft),
+        set(draft.get("current_item_member_ids") or []),
+        "expense:item-members-done",
     )
+    if edit:
+        await _edit_or_reply_text(query, "Who shared this item?", keyboard)
+    else:
+        await query.message.reply_text("Who shared this item?", reply_markup=keyboard)
 
 
 def _itemized_next_keyboard(draft: dict) -> InlineKeyboardMarkup:
@@ -1040,7 +1068,7 @@ async def _show_saved_details(query: Any, context: Any, expense_id: str) -> None
     )
     await query.message.reply_text(
         format_exchange_details(expense) + extra + "\n\n" + history,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Override rate", callback_data=f"expense:override-rate:{expense.id}")]]),
+        reply_markup=saved_details_keyboard(expense.id),
     )
 
 

@@ -89,6 +89,19 @@ async def test_saved_details_exposes_override_rate_button(trip_repository, membe
     buttons = details.callback_query.message.replies[0]["reply_markup"].inline_keyboard
     assert buttons[0][0].text == "Override rate"
     assert buttons[0][0].callback_data == f"expense:override-rate:{expense.id}"
+    assert buttons[1][0].text == "Home"
+    assert buttons[1][0].callback_data == "expense:home"
+
+
+async def test_expense_home_callback_restores_active_menu(trip_repository, member_repository, expense_repository):
+    _, context, _ = await _saved_foreign_expense(trip_repository, member_repository, expense_repository)
+    home = fake_callback_update("expense:home", user=fake_user(101, "Alex", "Alex"))
+
+    await expense_callback(home, context)
+
+    reply = home.callback_query.message.replies[0]
+    assert reply["text"] == "Main buttons are ready."
+    assert reply["reply_markup"].keyboard[0] == ["Add expense", "Balances"]
 
 
 async def test_after_save_override_updates_details_and_balance_totals(trip_repository, member_repository, expense_repository):

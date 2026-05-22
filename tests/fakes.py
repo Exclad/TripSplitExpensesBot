@@ -9,9 +9,13 @@ from typing import Any
 class FakeMessage:
     text: str
     replies: list[dict[str, Any]] = field(default_factory=list)
+    edits: list[dict[str, Any]] = field(default_factory=list)
 
     async def reply_text(self, text: str, **kwargs: Any) -> None:
         self.replies.append({"text": text, **kwargs})
+
+    async def edit_text(self, text: str, **kwargs: Any) -> None:
+        self.edits.append({"text": text, **kwargs})
 
 
 @dataclass
@@ -22,6 +26,9 @@ class FakeCallbackQuery:
 
     async def answer(self, text: str = "") -> None:
         self.answers.append(text)
+
+    async def edit_message_text(self, text: str, **kwargs: Any) -> None:
+        await self.message.edit_text(text, **kwargs)
 
 
 def fake_user(user_id: int = 101, username: str | None = "Alex", full_name: str = "Alex") -> SimpleNamespace:
