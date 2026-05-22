@@ -18,8 +18,14 @@ from tripsplitexpenses.repositories.trips import ActiveTripExistsError, TripIsAr
 from tripsplitexpenses.money import Money, format_money
 
 try:
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
 except ImportError:  # pragma: no cover - tests use the lightweight fallback.
+
+    @dataclass(frozen=True)
+    class ForceReply:  # type: ignore[no-redef]
+        selective: bool = True
+        input_field_placeholder: str | None = None
+        force_reply: bool = True
 
     @dataclass(frozen=True)
     class InlineKeyboardButton:  # type: ignore[no-redef]
@@ -37,6 +43,10 @@ def _setup_drafts(context: Any) -> dict[tuple[int, int], dict]:
 
 def _draft_key(update: Any) -> tuple[int, int]:
     return (update.effective_chat.id, update.effective_user.id)
+
+
+def _force_reply(placeholder: str) -> ForceReply:
+    return ForceReply(selective=True, input_field_placeholder=placeholder)
 
 
 def parse_newtrip_args(text: str) -> tuple[str | None, str | None, str | None]:
@@ -85,6 +95,7 @@ async def newtrip(update: Any, context: Any) -> None:
         "Tap Join this trip so I know who is coming.",
         reply_markup=keyboard,
     )
+    await update.message.reply_text("Main buttons are ready.", reply_markup=active_menu())
 
 
 async def start_setup(update: Any, context: Any) -> None:
@@ -93,7 +104,7 @@ async def start_setup(update: Any, context: Any) -> None:
         await update.message.reply_text(DUPLICATE_TRIP_MESSAGE, reply_markup=active_menu())
         return
     _setup_drafts(context)[_draft_key(update)] = {"flow": "setup_name"}
-    await update.message.reply_text("What should we call this trip?", reply_markup=setup_menu())
+    await update.message.reply_text("What should we call this trip?", reply_markup=_force_reply("Trip name"))
 
 
 async def setup_message(update: Any, context: Any) -> bool:
@@ -111,26 +122,42 @@ async def setup_message(update: Any, context: Any) -> bool:
             return True
         draft["name"] = text
         draft["flow"] = "setup_base_currency"
-        await update.message.reply_text("What currency should settlements use? Send a 3-letter code like SGD.")
+        await update.message.reply_text(
+            "What currency should settlements use? Send a 3-letter code like SGD.",
+            reply_markup=_force_reply("Settlement currency"),
+        )
         return True
     if draft["flow"] == "setup_base_currency":
         if not _looks_like_currency(text):
-            await update.message.reply_text("Use a 3-letter currency code like SGD.")
+            await update.message.reply_text("Use a 3-letter currency code like SGD.", reply_markup=_force_reply("Settlement currency"))
             return True
         draft["base_currency"] = text.upper()
         draft["flow"] = "setup_default_currency"
-        await update.message.reply_text("What currency will expenses usually be in? Send a 3-letter code like KRW.")
+        await update.message.reply_text(
+            "What currency will expenses usually be in? Send a 3-letter code like KRW.",
+            reply_markup=_force_reply("Default expense currency"),
+        )
         return True
     if draft["flow"] == "setup_default_currency":
         if not _looks_like_currency(text):
-            await update.message.reply_text("Use a 3-letter currency code like KRW.")
+            await update.message.reply_text("Use a 3-letter currency code like KRW.", reply_markup=_force_reply("Default expense currency"))
             return True
         draft["default_expense_currency"] = text.upper()
+        draft["flow"] = "setup_members"
+        await update.message.reply_text(
+            "Who is coming? Send names separated by commas, or send Skip to add people later.",
+            reply_markup=_force_reply("Alex, Sam, Priya"),
+        )
+        return True
+    if draft["flow"] == "setup_members":
+        draft["member_names"] = _parse_member_names(text)
         draft["flow"] = "setup_confirm"
+        member_line = ", ".join(draft["member_names"]) if draft["member_names"] else "none yet"
         await update.message.reply_text(
             f"Create {draft['name']}?\n"
             f"Settlement currency: {draft['base_currency']}\n"
-            f"Default expense currency: {draft['default_expense_currency']}",
+            f"Default expense currency: {draft['default_expense_currency']}\n"
+            f"Members: {member_line}",
             reply_markup=InlineKeyboardMarkup(
                 [
                     [
@@ -228,15 +255,27 @@ async def trip_callback(update: Any, context: Any) -> None:
             await query.answer("Trip exists")
             await query.message.reply_text(DUPLICATE_TRIP_MESSAGE, reply_markup=active_menu())
             return
+        member_repository: MemberRepository = context.application.bot_data["member_repository"]
+        members = [
+            member_repository.add_manual_member(trip.id, name, update.effective_user.id)
+            for name in draft.get("member_names", [])
+        ]
         _setup_drafts(context).pop(_draft_key(update), None)
         await query.answer("Trip created")
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Join this trip", callback_data=JOIN_CALLBACK_DATA)]])
-        await query.message.reply_text(
+        rows = [[InlineKeyboardButton(member.display_name, callback_data=f"members:map-confirm:{member.id}")] for member in members]
+        rows.append([InlineKeyboardButton("Join this trip", callback_data=JOIN_CALLBACK_DATA)])
+        setup_text = (
             f"Trip created: {trip.name}.\n"
             f"Settlement currency: {trip.base_currency}\n"
             f"Default expense currency: {trip.default_expense_currency}\n"
-            "Tap Join this trip, then add anyone missing from Members.",
-            reply_markup=keyboard,
+        )
+        if members:
+            setup_text += "Each person can tap their name to link Telegram. If someone was missed, tap Join this trip."
+        else:
+            setup_text += "Tap Join this trip, then add anyone missing from Members."
+        await query.message.reply_text(
+            setup_text,
+            reply_markup=InlineKeyboardMarkup(rows),
         )
         await query.message.reply_text("Main buttons are ready.", reply_markup=active_menu())
         return
@@ -283,3 +322,17 @@ async def trip_callback(update: Any, context: Any) -> None:
 def _looks_like_currency(value: str | None) -> bool:
     code = (value or "").strip()
     return len(code) == 3 and code.isalpha()
+
+
+def _parse_member_names(text: str) -> list[str]:
+    if text.strip().lower() in {"skip", "none", "no"}:
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw_name in text.replace("\n", ",").split(","):
+        name = " ".join(raw_name.strip().split())
+        key = name.lower()
+        if name and key not in seen:
+            names.append(name)
+            seen.add(key)
+    return names

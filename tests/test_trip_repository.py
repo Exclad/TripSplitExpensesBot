@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from tripsplitexpenses.db.connection import connect
+from tripsplitexpenses.db.migrations import run_migrations
 from tripsplitexpenses.repositories.trips import ActiveTripExistsError
+from tripsplitexpenses.repositories.trips import TripRepository
 
 
 def test_repository_can_create_and_fetch_active_trip_by_chat_id(trip_repository):
@@ -87,3 +90,40 @@ def test_readable_trip_returns_active_then_latest_archived(trip_repository):
     active = trip_repository.create_trip(-100, "Korea 2025", "SGD", 42)
 
     assert trip_repository.get_readable_trip(-100) == active
+
+
+def test_migrations_replace_legacy_one_trip_per_chat_index(tmp_path):
+    connection = connect(tmp_path / "legacy.sqlite3")
+    connection.executescript(
+        """
+        CREATE TABLE trips (
+            id TEXT PRIMARY KEY,
+            telegram_chat_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            base_currency TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            created_by_telegram_id INTEGER NOT NULL,
+            archived_at TEXT,
+            archived_by_telegram_id INTEGER
+        );
+
+        CREATE UNIQUE INDEX ux_trips_one_active_per_chat
+            ON trips(telegram_chat_id);
+
+        INSERT INTO trips (
+            id, telegram_chat_id, name, base_currency, status, created_at,
+            updated_at, created_by_telegram_id, archived_at, archived_by_telegram_id
+        )
+        VALUES (
+            'old-trip', -100, 'Old Trip', 'SGD', 'archived', '2026-05-01T00:00:00+00:00',
+            '2026-05-01T00:00:00+00:00', 101, '2026-05-02T00:00:00+00:00', 101
+        );
+        """
+    )
+
+    run_migrations(connection)
+
+    trip = TripRepository(connection).create_trip(-100, "New Trip", "SGD", 101)
+    assert trip.name == "New Trip"

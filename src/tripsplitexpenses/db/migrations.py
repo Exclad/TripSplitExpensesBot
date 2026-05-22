@@ -13,6 +13,21 @@ def _add_column(connection: sqlite3.Connection, table: str, column: str, definit
         connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+def _ensure_active_trip_index(connection: sqlite3.Connection) -> None:
+    index_name = "ux_trips_one_active_per_chat"
+    rows = connection.execute("PRAGMA index_list(trips)").fetchall()
+    existing = next((row for row in rows if row["name"] == index_name), None)
+    if existing is not None and not existing["partial"]:
+        connection.execute(f"DROP INDEX {index_name}")
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_trips_one_active_per_chat
+            ON trips(telegram_chat_id)
+            WHERE status = 'active'
+        """
+    )
+
+
 def run_migrations(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
@@ -28,10 +43,6 @@ def run_migrations(connection: sqlite3.Connection) -> None:
             archived_at TEXT,
             archived_by_telegram_id INTEGER
         );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_trips_one_active_per_chat
-            ON trips(telegram_chat_id)
-            WHERE status = 'active';
 
         CREATE TABLE IF NOT EXISTS members (
             id TEXT PRIMARY KEY,
@@ -150,6 +161,7 @@ def run_migrations(connection: sqlite3.Connection) -> None:
         );
         """
     )
+    _ensure_active_trip_index(connection)
     _add_column(connection, "expenses", "entry_type", "TEXT NOT NULL DEFAULT 'expense'")
     _add_column(connection, "expenses", "linked_expense_id", "TEXT")
     _add_column(connection, "expenses", "note", "TEXT")
