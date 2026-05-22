@@ -29,8 +29,17 @@ async def test_trip_status_exposes_active_menu(trip_repository, member_repositor
 
     await trip_status(update, fake_context(trip_repository, member_repository))
 
-    keyboard = update.message.replies[0]["reply_markup"].keyboard
     assert _keyboard_text(update.message.replies[0]["reply_markup"]) == [[ADD_EXPENSE, BALANCES], [PEOPLE, EXPENSES], [MEMBERS, TRIP]]
+
+
+async def test_archived_trip_menu_exposes_setup_and_read_only_actions(trip_repository, member_repository):
+    trip, _, _ = _trip_with_members(trip_repository, member_repository)
+    trip_repository.archive_trip(trip.id, archived_by_telegram_id=101)
+    update = fake_message_update("/trip")
+
+    await trip_status(update, fake_context(trip_repository, member_repository))
+
+    assert _keyboard_text(update.message.replies[0]["reply_markup"]) == [[SETUP_TRIP, TRIP], [BALANCES, "Help"]]
 
 
 async def test_menu_routes_to_balance_people_expenses_and_members(trip_repository, member_repository, expense_repository):

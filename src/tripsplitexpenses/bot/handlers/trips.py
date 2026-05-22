@@ -74,7 +74,7 @@ async def newtrip(update: Any, context: Any) -> None:
             created_by_telegram_id=update.effective_user.id,
         )
     except ActiveTripExistsError:
-        await update.message.reply_text(DUPLICATE_TRIP_MESSAGE)
+        await update.message.reply_text(DUPLICATE_TRIP_MESSAGE, reply_markup=active_menu())
         return
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Join this trip", callback_data=JOIN_CALLBACK_DATA)]])
@@ -89,7 +89,7 @@ async def newtrip(update: Any, context: Any) -> None:
 
 async def start_setup(update: Any, context: Any) -> None:
     trip_repository: TripRepository = context.application.bot_data["trip_repository"]
-    if trip_repository.get_readable_trip(update.effective_chat.id) is not None:
+    if trip_repository.get_active_trip(update.effective_chat.id) is not None:
         await update.message.reply_text(DUPLICATE_TRIP_MESSAGE, reply_markup=active_menu())
         return
     _setup_drafts(context)[_draft_key(update)] = {"flow": "setup_name"}
@@ -150,7 +150,7 @@ async def trip_status(update: Any, context: Any) -> None:
     expense_repository: ExpenseRepository | None = context.application.bot_data.get("expense_repository")
     trip = trip_repository.get_readable_trip(update.effective_chat.id)
     if trip is None:
-        await update.message.reply_text(MISSING_TRIP_MESSAGE)
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
         return
 
     members = member_repository.list_members(trip.id)
@@ -184,7 +184,7 @@ async def archive_command(update: Any, context: Any) -> None:
     trip_repository: TripRepository = context.application.bot_data["trip_repository"]
     trip = trip_repository.get_active_trip(update.effective_chat.id)
     if trip is None:
-        await update.message.reply_text(MISSING_TRIP_MESSAGE)
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
         return
     await update.message.reply_text(ARCHIVE_CONFIRM_MESSAGE, reply_markup=_confirm_keyboard("archive"))
 
@@ -193,10 +193,10 @@ async def reopen_command(update: Any, context: Any) -> None:
     trip_repository: TripRepository = context.application.bot_data["trip_repository"]
     trip = trip_repository.get_readable_trip(update.effective_chat.id)
     if trip is None:
-        await update.message.reply_text(MISSING_TRIP_MESSAGE)
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
         return
     if trip.status == "active":
-        await update.message.reply_text("This trip is already active.")
+        await update.message.reply_text("This trip is already active.", reply_markup=active_menu())
         return
     await update.message.reply_text(REOPEN_CONFIRM_MESSAGE, reply_markup=_confirm_keyboard("reopen"))
 
@@ -242,37 +242,40 @@ async def trip_callback(update: Any, context: Any) -> None:
         return
     if data == "trip:archive:cancel" or data == "trip:reopen:cancel":
         await query.answer("Cancelled")
-        await query.message.reply_text("Cancelled. Nothing changed.")
+        await query.message.reply_text("Cancelled. Nothing changed.", reply_markup=menu_for_chat(context, update.effective_chat.id))
         return
     if data == "trip:archive:confirm":
         trip = trip_repository.get_active_trip(update.effective_chat.id)
         if trip is None:
             await query.answer("No active trip")
-            await query.message.reply_text(MISSING_TRIP_MESSAGE)
+            await query.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
             return
         try:
             trip_repository.archive_trip(trip.id, update.effective_user.id)
         except (TripIsArchivedError, TripNotFoundError) as exc:
             await query.answer("Not archived")
-            await query.message.reply_text(str(exc))
+            await query.message.reply_text(str(exc), reply_markup=menu_for_chat(context, update.effective_chat.id))
             return
         await query.answer("Archived")
-        await query.message.reply_text(f"Archived {trip.name}. You can still use /trip and /balance, or /reopen when needed.")
+        await query.message.reply_text(
+            f"Archived {trip.name}. Tap Set up trip to start another, or use /reopen to edit this one again.",
+            reply_markup=menu_for_chat(context, update.effective_chat.id),
+        )
         return
     if data == "trip:reopen:confirm":
         trip = trip_repository.get_readable_trip(update.effective_chat.id)
         if trip is None:
             await query.answer("No trip")
-            await query.message.reply_text(MISSING_TRIP_MESSAGE)
+            await query.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
             return
         try:
             reopened = trip_repository.reopen_trip(trip.id, update.effective_user.id)
         except ActiveTripExistsError:
             await query.answer("Active trip exists")
-            await query.message.reply_text(DUPLICATE_TRIP_MESSAGE)
+            await query.message.reply_text(DUPLICATE_TRIP_MESSAGE, reply_markup=active_menu())
             return
         await query.answer("Reopened")
-        await query.message.reply_text(f"Reopened {reopened.name}. Expense edits are available again.")
+        await query.message.reply_text(f"Reopened {reopened.name}. Expense edits are available again.", reply_markup=active_menu())
         return
     await query.answer("Trip action not found.")
 

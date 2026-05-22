@@ -29,3 +29,22 @@ async def test_setup_menu_walks_trip_name_base_and_country_currency(trip_reposit
     trip = trip_repository.get_active_trip(-100)
     assert trip is not None
     assert trip.default_expense_currency == "KRW"
+
+
+async def test_setup_menu_can_start_new_trip_after_archiving_old_trip(trip_repository, member_repository):
+    old_trip = trip_repository.create_trip(-100, "Old Trip", "SGD", 101, default_expense_currency="KRW")
+    trip_repository.archive_trip(old_trip.id, archived_by_telegram_id=101)
+    context = fake_context(trip_repository, member_repository)
+
+    start = fake_message_update(SETUP_TRIP)
+    await text_router(start, context)
+    assert start.message.replies[0]["text"] == "What should we call this trip?"
+
+    await setup_message(fake_message_update("New Trip"), context)
+    await setup_message(fake_message_update("SGD"), context)
+    await setup_message(fake_message_update("KRW"), context)
+    await trip_callback(fake_callback_update("trip:setup:confirm"), context)
+
+    active_trip = trip_repository.get_active_trip(-100)
+    assert active_trip is not None
+    assert active_trip.name == "New Trip"

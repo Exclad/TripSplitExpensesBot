@@ -3,6 +3,7 @@ from __future__ import annotations
 from tests.fakes import fake_callback_update, fake_context, fake_message_update
 from tripsplitexpenses.bot.copy import ARCHIVE_CONFIRM_MESSAGE, DUPLICATE_TRIP_MESSAGE, NEWTRIP_GUIDE_MESSAGE, REOPEN_CONFIRM_MESSAGE
 from tripsplitexpenses.bot.handlers.trips import archive_command, newtrip, reopen_command, setup_message, start_setup, trip_callback, trip_status
+from tripsplitexpenses.bot.menu import SETUP_TRIP
 
 
 async def test_newtrip_command_creates_trip_and_returns_join_button(trip_repository, member_repository):
@@ -95,6 +96,7 @@ async def test_archive_confirm_marks_trip_read_only_but_trip_status_still_works(
 
     assert trip_repository.get_active_trip(-100) is None
     assert "Status: Archived" in status_update.message.replies[0]["text"]
+    assert SETUP_TRIP in _keyboard_labels(status_update.message.replies[0]["reply_markup"])
 
 
 async def test_reopen_command_asks_for_confirmation_and_confirm_reopens(trip_repository, member_repository):
@@ -108,3 +110,7 @@ async def test_reopen_command_asks_for_confirmation_and_confirm_reopens(trip_rep
 
     assert reopen_update.message.replies[0]["text"] == REOPEN_CONFIRM_MESSAGE
     assert trip_repository.get_active_trip(-100) is not None
+
+
+def _keyboard_labels(markup):
+    return [getattr(button, "text", button) for row in markup.keyboard for button in row]

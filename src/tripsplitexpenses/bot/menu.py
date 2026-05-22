@@ -50,10 +50,25 @@ def active_menu() -> ReplyKeyboardMarkup:
     )
 
 
+def archived_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [SETUP_TRIP, TRIP],
+            [BALANCES, HELP],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
 def menu_for_chat(context: Any, chat_id: int) -> ReplyKeyboardMarkup:
     trip_repository = context.application.bot_data.get("trip_repository")
-    if trip_repository is not None and trip_repository.get_readable_trip(chat_id) is not None:
+    if trip_repository is None:
+        return setup_menu()
+    if trip_repository.get_active_trip(chat_id) is not None:
         return active_menu()
+    if trip_repository.get_readable_trip(chat_id) is not None:
+        return archived_menu()
     return setup_menu()
 
 
