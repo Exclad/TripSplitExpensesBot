@@ -1,6 +1,7 @@
 services:
   bot:
     build: .
+    user: "0:0"
     env_file:
       - path: .env
         required: false
@@ -10,4 +11,10 @@ services:
       DATA_DIR: /data
     volumes:
       - ${TRIPSPLIT_DATA_DIR:-./data}:/data
+    networks:
+      - allowed-internet
     restart: unless-stopped
+
+networks:
+  allowed-internet:
+    external: true
