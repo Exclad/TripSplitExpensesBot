@@ -3,7 +3,7 @@ from __future__ import annotations
 from tests.fakes import fake_callback_update, fake_context, fake_message_update
 from tripsplitexpenses.bot.copy import ARCHIVE_CONFIRM_MESSAGE, DUPLICATE_TRIP_MESSAGE, NEWTRIP_GUIDE_MESSAGE, REOPEN_CONFIRM_MESSAGE
 from tripsplitexpenses.bot.handlers.trips import archive_command, newtrip, reopen_command, setup_message, start_setup, trip_callback, trip_status
-from tripsplitexpenses.bot.menu import SETUP_TRIP
+from tripsplitexpenses.bot.menu import ADD_EXPENSE, BALANCES, EXPENSES, MEMBERS, PEOPLE, SETUP_TRIP, TRIP
 
 
 async def test_newtrip_command_creates_trip_and_returns_join_button(trip_repository, member_repository):
@@ -19,6 +19,15 @@ async def test_newtrip_command_creates_trip_and_returns_join_button(trip_reposit
     assert "Settlement currency: SGD" in update.message.replies[0]["text"]
     assert "Default expense currency: SGD" in update.message.replies[0]["text"]
     assert update.message.replies[0]["reply_markup"] is not None
+    assert update.message.replies[1]["text"] == "Main buttons are ready."
+    assert _keyboard_labels(update.message.replies[1]["reply_markup"]) == [
+        ADD_EXPENSE,
+        BALANCES,
+        PEOPLE,
+        EXPENSES,
+        MEMBERS,
+        TRIP,
+    ]
 
 
 async def test_newtrip_missing_fields_starts_guided_setup(trip_repository, member_repository):

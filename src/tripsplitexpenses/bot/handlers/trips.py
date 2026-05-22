@@ -85,6 +85,7 @@ async def newtrip(update: Any, context: Any) -> None:
         "Tap Join this trip so I know who is coming.",
         reply_markup=keyboard,
     )
+    await update.message.reply_text("Main buttons are ready.", reply_markup=active_menu())
 
 
 async def start_setup(update: Any, context: Any) -> None:
