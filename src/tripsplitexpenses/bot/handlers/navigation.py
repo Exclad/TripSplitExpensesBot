@@ -7,7 +7,11 @@ from tripsplitexpenses.bot.handlers.expenses import exact_amount_message, start_
 from tripsplitexpenses.bot.handlers.help import help_command
 from tripsplitexpenses.bot.handlers.members import reply_members_overview
 from tripsplitexpenses.bot.handlers.trips import setup_message, start_setup, trip_status
-from tripsplitexpenses.bot.menu import ADD_EXPENSE, BALANCES, CANCEL, EXPENSES, HELP, MEMBERS, PEOPLE, SETUP_TRIP, TRIP
+from tripsplitexpenses.bot.menu import ADD_EXPENSE, BALANCES, CANCEL, EXPENSES, HELP, MEMBERS, PEOPLE, SETUP_TRIP, TRIP, menu_for_chat
+
+
+async def menu_command(update: Any, context: Any) -> None:
+    await update.message.reply_text("Main buttons are ready.", reply_markup=menu_for_chat(context, update.effective_chat.id))
 
 
 async def text_router(update: Any, context: Any) -> None:

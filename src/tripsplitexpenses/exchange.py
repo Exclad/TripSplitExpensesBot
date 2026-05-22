@@ -19,14 +19,19 @@ class ExchangeRate:
 
 
 class ExchangeRateProvider:
-    timeout_seconds = 8
+    def __init__(self, timeout_seconds: int = 3) -> None:
+        self.timeout_seconds = timeout_seconds
+        self._cache: dict[tuple[str, str, str], ExchangeRate] = {}
 
     def get_rate(self, from_currency: str, to_currency: str, date: str) -> ExchangeRate:
         from_code = normalize_currency(from_currency)
         to_code = normalize_currency(to_currency)
         if from_code == to_code:
             return ExchangeRate(from_code, to_code, Decimal("1"), date, "identity")
-        return self._get_remote_rate(from_code, to_code, date)
+        cache_key = (from_code, to_code, date)
+        if cache_key not in self._cache:
+            self._cache[cache_key] = self._get_remote_rate(from_code, to_code, date)
+        return self._cache[cache_key]
 
     def _get_remote_rate(self, from_code: str, to_code: str, date: str) -> ExchangeRate:
         errors: list[str] = []
@@ -56,6 +61,7 @@ class ExchangeRateProvider:
 
 class FixedExchangeRateProvider(ExchangeRateProvider):
     def __init__(self, rates: dict[tuple[str, str, str], Decimal | str]) -> None:
+        super().__init__()
         self.rates = {(a.upper(), b.upper(), d): Decimal(str(rate)) for (a, b, d), rate in rates.items()}
 
     def get_rate(self, from_currency: str, to_currency: str, date: str) -> ExchangeRate:

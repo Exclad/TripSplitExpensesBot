@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from tests.fakes import fake_context, fake_message_update
-from tripsplitexpenses.bot.handlers.navigation import text_router
+from tripsplitexpenses.bot.handlers.navigation import menu_command, text_router
 from tripsplitexpenses.bot.handlers.trips import trip_status
 from tripsplitexpenses.bot.menu import ADD_EXPENSE, BALANCES, EXPENSES, MEMBERS, PEOPLE, SETUP_TRIP, TRIP
 from tripsplitexpenses.exchange import FixedExchangeRateProvider
@@ -29,6 +29,16 @@ async def test_trip_status_exposes_active_menu(trip_repository, member_repositor
 
     await trip_status(update, fake_context(trip_repository, member_repository))
 
+    assert _keyboard_text(update.message.replies[0]["reply_markup"]) == [[ADD_EXPENSE, BALANCES], [PEOPLE, EXPENSES], [MEMBERS, TRIP]]
+
+
+async def test_menu_command_restores_keyboard_for_current_chat_state(trip_repository, member_repository):
+    _trip_with_members(trip_repository, member_repository)
+    update = fake_message_update("/menu")
+
+    await menu_command(update, fake_context(trip_repository, member_repository))
+
+    assert update.message.replies[0]["text"] == "Main buttons are ready."
     assert _keyboard_text(update.message.replies[0]["reply_markup"]) == [[ADD_EXPENSE, BALANCES], [PEOPLE, EXPENSES], [MEMBERS, TRIP]]
 
 

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from tests.fakes import fake_callback_update, fake_context, fake_message_update, fake_user
 from tripsplitexpenses.bot.copy import ARCHIVED_TRIP_READ_ONLY_MESSAGE
-from tripsplitexpenses.bot.handlers.expenses import ADD_GUIDE_MESSAGE, add_expense, expense_callback
+from tripsplitexpenses.bot.handlers.expenses import add_expense, expense_callback
 from tripsplitexpenses.categories import BUILT_IN_CATEGORIES
 from tripsplitexpenses.exchange import FixedExchangeRateProvider
 
@@ -37,13 +37,13 @@ async def test_add_quick_start_prompts_for_category(trip_repository, member_repo
     assert [row[0].text for row in buttons] == list(BUILT_IN_CATEGORIES) + ["+ Custom"]
 
 
-async def test_add_missing_fields_guides_user(trip_repository, member_repository, expense_repository):
+async def test_add_without_args_starts_guided_expense_flow(trip_repository, member_repository, expense_repository):
     _trip_with_members(trip_repository, member_repository)
     update = fake_message_update("/add")
 
     await add_expense(update, _context(trip_repository, member_repository, expense_repository))
 
-    assert update.message.replies[0]["text"] == ADD_GUIDE_MESSAGE
+    assert update.message.replies[0]["text"] == "How much was it? I will use SGD."
 
 
 async def test_equal_split_save_persists_expense_and_posts_saved_card(trip_repository, member_repository, expense_repository):

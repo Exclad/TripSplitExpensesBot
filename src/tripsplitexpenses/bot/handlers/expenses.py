@@ -78,6 +78,14 @@ def parse_add_args(text: str) -> tuple[str | None, str | None, str | None]:
     return amount, None, " ".join(args[1:]).strip()
 
 
+def _is_plain_add_command(text: str) -> bool:
+    parts = text.split()
+    if len(parts) != 1:
+        return False
+    command = parts[0].split("@", 1)[0].lower()
+    return command == "/add"
+
+
 def category_keyboard(custom_categories: list[str] | None = None) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(category, callback_data=f"expense:category:{category}")] for category in BUILT_IN_CATEGORIES]
     rows.extend(
@@ -175,6 +183,9 @@ async def add_expense(update: Any, context: Any) -> None:
 
     amount_text, currency, description = parse_add_args(update.message.text or "")
     if not amount_text or not description:
+        if _is_plain_add_command(update.message.text or ""):
+            await start_button_expense(update, context)
+            return
         await update.message.reply_text(ADD_GUIDE_MESSAGE)
         return
 
@@ -900,21 +911,10 @@ async def _button_expense_amount_message(update: Any, context: Any, draft: dict)
         await update.message.reply_text(str(exc), reply_markup=force_reply(f"Amount in {currency}"))
         return
     draft["original_money"] = original
-    try:
+    if original.currency == draft["base_currency"]:
         base, rate = convert_money(original, draft["base_currency"], draft["expense_date"], _exchange_provider(context))
-    except (LookupError, KeyError) as exc:
-        draft["flow"] = "entry_override_choice"
-        await update.message.reply_text(
-            f"I could not find an exchange rate for {original.currency}->{draft['base_currency']} on {draft['expense_date']}.\n"
-            f"You can enter the rate or the exact {draft['base_currency']} amount instead.",
-            reply_markup=exchange_override_keyboard(),
-        )
-        return
-    except MoneyError as exc:
-        await update.message.reply_text(str(exc))
-        return
-    draft["base_money"] = base
-    draft["exchange_rate"] = rate
+        draft["base_money"] = base
+        draft["exchange_rate"] = rate
     draft["flow"] = "expense_description"
     await update.message.reply_text("What was it for?", reply_markup=force_reply("Description"))
 
@@ -925,9 +925,32 @@ async def _button_expense_description_message(update: Any, context: Any, draft: 
         await update.message.reply_text("Send a short description, like lunch.", reply_markup=force_reply("Description"))
         return
     draft["description"] = description
+    if "base_money" not in draft:
+        if not await _convert_button_expense_amount(update, context, draft):
+            return
     draft.pop("flow", None)
     custom_categories = [category.name for category in _category_repository(context).list_custom_categories(draft["trip_id"])]
     await update.message.reply_text("Pick a category.", reply_markup=category_keyboard(custom_categories))
+
+
+async def _convert_button_expense_amount(update: Any, context: Any, draft: dict) -> bool:
+    original = draft["original_money"]
+    try:
+        base, rate = convert_money(original, draft["base_currency"], draft["expense_date"], _exchange_provider(context))
+    except (LookupError, KeyError):
+        draft["flow"] = "entry_override_choice"
+        await update.message.reply_text(
+            f"I could not find an exchange rate for {original.currency}->{draft['base_currency']} on {draft['expense_date']}.\n"
+            f"You can enter the rate or the exact {draft['base_currency']} amount instead.",
+            reply_markup=exchange_override_keyboard(),
+        )
+        return False
+    except MoneyError as exc:
+        await update.message.reply_text(str(exc))
+        return False
+    draft["base_money"] = base
+    draft["exchange_rate"] = rate
+    return True
 
 
 async def _ask_split_members(query: Any, context: Any, draft: dict, *, edit: bool = False) -> None:

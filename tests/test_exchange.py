@@ -67,3 +67,27 @@ def test_default_provider_fetches_krw_to_sgd_rate(monkeypatch):
     assert rate.from_currency == "KRW"
     assert rate.to_currency == "SGD"
     assert rate.provider == "currency-api"
+
+
+def test_default_provider_uses_short_timeout_and_caches_rates(monkeypatch):
+    calls = []
+
+    class FakeResponse(BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(url, timeout):
+        calls.append((url, timeout))
+        return FakeResponse(b'{"date":"2026-05-22","sgd":0.001}')
+
+    monkeypatch.setattr(exchange, "urlopen", fake_urlopen)
+    provider = ExchangeRateProvider()
+
+    convert_money(parse_money("3500", "KRW"), "SGD", "2026-05-22", provider)
+    convert_money(parse_money("7000", "KRW"), "SGD", "2026-05-22", provider)
+
+    assert len(calls) == 1
+    assert calls[0][1] == 3

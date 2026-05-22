@@ -4,8 +4,8 @@ from datetime import date
 from decimal import Decimal
 
 from tests.fakes import fake_callback_update, fake_context, fake_message_update, fake_user
-from tripsplitexpenses.bot.handlers.expenses import exact_amount_message, expense_callback, start_button_expense
-from tripsplitexpenses.exchange import FixedExchangeRateProvider
+from tripsplitexpenses.bot.handlers.expenses import add_expense, exact_amount_message, expense_callback, start_button_expense
+from tripsplitexpenses.exchange import ExchangeRate, FixedExchangeRateProvider
 
 
 def _context(trip_repository, member_repository, expense_repository, provider=None):
@@ -63,6 +63,35 @@ async def test_button_expense_defaults_to_country_currency_and_saves(trip_reposi
     assert expense.base_amount_minor == 350
 
 
+async def test_button_expense_amount_step_does_not_wait_for_exchange_lookup(trip_repository, member_repository, expense_repository):
+    _trip_with_members(trip_repository, member_repository)
+    provider = RecordingExchangeProvider()
+    context = _context(trip_repository, member_repository, expense_repository, provider)
+
+    await start_button_expense(fake_message_update("Add expense", user=fake_user(101, "alex", "alex")), context)
+    amount = fake_message_update("3500", user=fake_user(101, "alex", "alex"))
+    await exact_amount_message(amount, context)
+
+    assert amount.message.replies[0]["text"] == "What was it for?"
+    assert provider.calls == []
+
+    description = fake_message_update("lunch", user=fake_user(101, "alex", "alex"))
+    await exact_amount_message(description, context)
+
+    assert description.message.replies[0]["text"] == "Pick a category."
+    assert provider.calls == [("KRW", "SGD")]
+
+
+async def test_add_command_without_args_starts_guided_expense_flow(trip_repository, member_repository, expense_repository):
+    _trip_with_members(trip_repository, member_repository)
+    context = _context(trip_repository, member_repository, expense_repository)
+
+    update = fake_message_update("/add", user=fake_user(101, "alex", "alex"))
+    await add_expense(update, context)
+
+    assert "I will use KRW" in update.message.replies[0]["text"]
+
+
 async def test_split_member_toggle_edits_existing_selector_message(trip_repository, member_repository, expense_repository):
     _trip_with_members(trip_repository, member_repository)
     provider = FixedExchangeRateProvider({("KRW", "SGD", date.today().isoformat()): Decimal("0.001")})
@@ -107,3 +136,12 @@ async def test_button_expense_can_switch_to_base_currency_before_amount(trip_rep
 
 def _is_force_reply(markup):
     return getattr(markup, "force_reply", False) is True
+
+
+class RecordingExchangeProvider:
+    def __init__(self):
+        self.calls = []
+
+    def get_rate(self, from_currency, to_currency, date):
+        self.calls.append((from_currency, to_currency))
+        return ExchangeRate(from_currency, to_currency, Decimal("0.001"), date, "recording")

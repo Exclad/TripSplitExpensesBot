@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from tripsplitexpenses.bot.copy import JOIN_CALLBACK_DATA
 from tripsplitexpenses.bot.auth import owner_gate
+from tripsplitexpenses.bot.commands import configure_bot_commands
 from tripsplitexpenses.bot.handlers.balances import balance_callback, balance_command
 from tripsplitexpenses.bot.handlers.categories import categories_command
 from tripsplitexpenses.bot.handlers.expenses import add_expense, correction_command, exact_amount_message, expense_callback, refund_command
 from tripsplitexpenses.bot.handlers.help import help_callback, help_command
 from tripsplitexpenses.bot.handlers.members import join_trip_callback, member_callback, members_command
-from tripsplitexpenses.bot.handlers.navigation import text_router
+from tripsplitexpenses.bot.handlers.navigation import menu_command, text_router
 from tripsplitexpenses.bot.handlers.trips import archive_command, newtrip, reopen_command, trip_callback, trip_status
 from tripsplitexpenses.db.connection import connect
 from tripsplitexpenses.db.migrations import run_migrations
@@ -25,7 +26,7 @@ def build_application(settings: Settings):
     connection = connect(settings.database_path)
     run_migrations(connection)
 
-    application = Application.builder().token(settings.telegram_bot_token).build()
+    application = Application.builder().token(settings.telegram_bot_token).post_init(configure_bot_commands).build()
     application.bot_data["connection"] = connection
     application.bot_data["trip_repository"] = TripRepository(connection)
     application.bot_data["member_repository"] = MemberRepository(connection)
@@ -34,6 +35,8 @@ def build_application(settings: Settings):
     application.bot_data["owner_telegram_id"] = settings.owner_telegram_id
 
     application.add_handler(TypeHandler(Update, owner_gate), group=-1)
+    application.add_handler(CommandHandler("start", menu_command))
+    application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler("newtrip", newtrip))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("trip", trip_status))
