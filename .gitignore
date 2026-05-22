@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+data/
+.security-scans/
+.planning/
+AGENTS.md
+*.sqlite
+*.sqlite3
+*.db

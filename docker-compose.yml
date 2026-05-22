@@ -1,0 +1,13 @@
+services:
+  bot:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      OWNER_TELEGRAM_ID: ${OWNER_TELEGRAM_ID:-}
+      DATA_DIR: /data
+    volumes:
+      - ${TRIPSPLIT_DATA_DIR:-./data}:/data
+    restart: unless-stopped
