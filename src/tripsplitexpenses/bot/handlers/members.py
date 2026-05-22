@@ -10,6 +10,7 @@ from tripsplitexpenses.bot.copy import (
     MEMBER_MAPPING_SUCCESS_TEMPLATE,
     MISSING_TRIP_MESSAGE,
 )
+from tripsplitexpenses.bot.menu import menu_for_chat
 from tripsplitexpenses.repositories.members import MemberRepository
 from tripsplitexpenses.repositories.trips import TripRepository
 
@@ -73,7 +74,7 @@ async def members_command(update: Any, context: Any) -> None:
         await _reply_map_confirmation(update, context, parts[2].strip())
         return
     if len(parts) < 3 or parts[1].lower() != "add" or not parts[2].strip():
-        await update.message.reply_text("Use /members add Sam, /members claim, or /members map Sam.")
+        await reply_members_overview(update, context)
         return
 
     trip_repository: TripRepository = context.application.bot_data["trip_repository"]
@@ -89,6 +90,23 @@ async def members_command(update: Any, context: Any) -> None:
         created_by_telegram_id=update.effective_user.id,
     )
     await update.message.reply_text(MANUAL_ADD_SUCCESS_TEMPLATE.format(name=member.display_name))
+
+
+async def reply_members_overview(update: Any, context: Any) -> None:
+    trip_repository: TripRepository = context.application.bot_data["trip_repository"]
+    member_repository: MemberRepository | None = context.application.bot_data.get("member_repository")
+    trip = trip_repository.get_readable_trip(update.effective_chat.id)
+    if trip is None or member_repository is None:
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
+        return
+    members = member_repository.list_members(trip.id)
+    member_lines = "\n".join(f"- {member.display_name}" for member in members) or "- No members yet."
+    await update.message.reply_text(
+        "Members\n"
+        f"{member_lines}\n\n"
+        "Friends can tap Join this trip. To add someone manually, use /members add Name.",
+        reply_markup=menu_for_chat(context, update.effective_chat.id),
+    )
 
 
 async def member_callback(update: Any, context: Any) -> None:

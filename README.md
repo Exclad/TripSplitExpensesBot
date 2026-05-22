@@ -2,21 +2,23 @@
 
 TripSplitExpenses is a Telegram bot for one trip group chat. It helps friends add messy travel expenses quickly, preserve original currencies, see balances, and settle up in the trip base currency.
 
-## What Works In v1
+## What Works
 
-- `/newtrip Demo Trip SGD` starts one active trip in the current Telegram group.
-- `/newtrip` without enough details responds with a short guided prompt.
-- `/trip` shows the trip, status, base currency, total spend, and members.
+- Persistent Telegram buttons expose the common actions: **Add expense**, **Balances**, **People**, **Expenses**, **Members**, and **Trip**.
+- **Set up trip** walks the group through trip name, settlement currency, and default country expense currency.
+- `/newtrip Korea 2026 SGD KRW` remains available as a shortcut.
+- `/trip` shows the trip, status, settlement currency, default expense currency, total spend, and members.
 - Friends join by tapping **Join this trip** after the trip is created.
 - `/members add Sam` adds someone manually when Telegram identity is unavailable.
 - `/members claim` and `/members map Sam` link manual members to Telegram users later.
-- `/add 25 lunch` starts a guided expense flow with category buttons, equal split by default, and a compact save confirmation.
+- **Add expense** starts a guided expense flow that defaults to the trip country currency, with a button to switch to the settlement currency.
+- `/add 25 lunch` remains available as a shortcut.
 - Exact split, multiple payers, itemized meals, shared charges, and custom categories are available from buttons.
 - Foreign-currency expenses keep the original amount and show the trip-currency equivalent.
-- Missing or wrong exchange rates can be overridden with a manual rate or exact trip-currency amount.
+- Live exchange rates are fetched automatically when available; missing or wrong rates can still be overridden with a manual rate or exact trip-currency amount.
 - Saved expense Details show payers, split details, exchange metadata, and per-expense history.
 - `/refund` and `/correction` add auditable adjustments linked to the original expense.
-- `/balance` shows a simplified settlement plan plus person, category, expense-list, and audit breakdowns.
+- **Balances**, **People**, and **Expenses** buttons expose settlement, person breakdown, and expense list views. `/balance` remains available as a shortcut.
 - `/archive` makes a trip read-only while keeping it viewable; `/reopen` allows edits again.
 - `/help` gives a compact overview with task-specific buttons.
 - SQLite data lives in a configured data directory and survives restarts.
@@ -80,30 +82,38 @@ The easiest Portainer setup is a Git-backed stack, not a tar upload:
 4. Add stack environment variables:
    - `TELEGRAM_BOT_TOKEN`: your BotFather token.
    - `OWNER_TELEGRAM_ID`: your numeric Telegram user ID.
-   - `TRIPSPLIT_DATA_DIR`: an absolute NAS path such as `/volume1/docker/tripsplitexpenses/data`.
+   - `TRIPSPLIT_DATA_DIR`: an absolute NAS path such as `/volume2/docker/trip-expenses-bot`.
 5. Deploy the stack.
 
 Using Git keeps updates simple: push changes, then redeploy or enable Portainer GitOps updates. Avoid committing `.env`; keep secrets in Portainer's stack environment variables.
+
+The Compose file joins an existing external Docker network named `allowed-internet` and runs the container as `0:0` so SQLite can write to NAS bind mounts that do not map neatly to the image's non-root user. Create that Docker network in Portainer before deploying, or rename the network in `docker-compose.yml` to match your NAS.
 
 ## Manual Smoke Test
 
 ### Trip Setup
 
 1. Add the bot to your Telegram group.
-2. Send `/newtrip Demo Trip SGD`.
-3. Tap **Join this trip**.
-4. Send `/members add Sam` for someone who did not tap the button.
-5. Send `/trip` and confirm the trip name, base currency, total spend placeholder, and member list appear.
-6. Restart the bot and send `/trip` again to confirm the trip and members are still there.
+2. Tap **Set up trip**.
+3. Enter the trip name.
+4. Enter the settlement currency, for example `SGD`.
+5. Enter the default country expense currency, for example `KRW`.
+6. Confirm the trip and tap **Join this trip**.
+7. Open **Members** and add anyone missing with `/members add Name`.
+8. Tap **Trip** and confirm the trip name, settlement currency, default expense currency, total spend placeholder, and member list appear.
+9. Restart the bot and tap **Trip** again to confirm the trip and members are still there.
 
 ### Equal-Split Expense
 
-1. Send `/add 25 lunch`.
-2. Tap a category such as **Food**.
-3. Review the compact confirmation: amount, payer, split members, category, date, and Save/Edit/Cancel buttons.
-4. Tap **Save**.
-5. Confirm the group receives a compact saved expense card with Edit, Delete, and Details buttons.
-6. Send `/trip` and confirm total spent has increased.
+1. Tap **Add expense**.
+2. Enter the amount. The bot assumes the default country currency unless you tap **Use SGD instead** first.
+3. Enter what it was for.
+4. Tap a category such as **Food**.
+5. Confirm who should split it with the member buttons.
+6. Review the compact confirmation: amount, payer, split members, category, date, and Save/Edit/Cancel buttons.
+7. Tap **Save**.
+8. Confirm the group receives a compact saved expense card with Edit, Delete, and Details buttons.
+9. Tap **Trip** and confirm total spent has increased.
 
 ### Exact Split
 
@@ -115,16 +125,18 @@ Using Git keeps updates simple: push changes, then redeploy or enable Portainer 
 
 ### Foreign Currency
 
-1. Send a foreign-currency expense such as `/add 1930 JPY ramen`.
-2. Confirm the main card shows the original amount plus the SGD equivalent, for example `JPY 1,930 (~SGD 17.18)`.
+1. Tap **Add expense** and enter a country-currency expense such as `3500`.
+2. Confirm the main card shows the original amount plus the SGD equivalent, for example `KRW 3,500.00 (~SGD 3.50)`.
 3. Tap **Details** to see the exchange rate, date, and source.
 4. Tap **Override rate** if the rate is missing or wrong.
 
 ### Balances and Settlement
 
-1. Send `/balance`.
+1. Tap **Balances**.
 2. Confirm the first section is the settlement plan.
-3. Use the buttons for person breakdown, category breakdown, expense list, and audit.
+3. Tap **People** for person breakdown.
+4. Tap **Expenses** for newest-first expense list.
+5. Use the inline balance buttons for category breakdown and audit.
 
 ### Trip Closeout
 

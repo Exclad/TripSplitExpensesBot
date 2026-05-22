@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from io import BytesIO
 
+from tripsplitexpenses import exchange
 from tripsplitexpenses.exchange import ExchangeRateProvider, FixedExchangeRateProvider, convert_money, convert_with_exact_base, convert_with_manual_rate
 from tripsplitexpenses.money import Money, parse_money
 
@@ -43,3 +45,25 @@ def test_exact_base_equivalent_derives_rate_and_preserves_base_amount():
     assert base.amount_minor == 1720
     assert rate.rate == Decimal("0.0089119171")
     assert rate.provider == "manual-equivalent"
+
+
+def test_default_provider_fetches_krw_to_sgd_rate(monkeypatch):
+    class FakeResponse(BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(url, timeout):
+        assert "krw/sgd.json" in url
+        return FakeResponse(b'{"date":"2026-05-22","sgd":0.001}')
+
+    monkeypatch.setattr(exchange, "urlopen", fake_urlopen)
+
+    base, rate = convert_money(parse_money("3500", "KRW"), "SGD", "2026-05-22", ExchangeRateProvider())
+
+    assert base.amount_minor == 350
+    assert rate.from_currency == "KRW"
+    assert rate.to_currency == "SGD"
+    assert rate.provider == "currency-api"

@@ -12,6 +12,7 @@ from tripsplitexpenses.money import Money, MoneyError, auto_adjust_rounding, par
 from tripsplitexpenses.repositories.categories import CategoryRepository
 from tripsplitexpenses.repositories.expenses import ExpenseRepository
 from tripsplitexpenses.bot.handlers.members import display_name_for_user
+from tripsplitexpenses.bot.menu import active_menu, menu_for_chat
 from tripsplitexpenses.repositories.members import Member, MemberRepository
 from tripsplitexpenses.repositories.trips import TripRepository
 
@@ -118,6 +119,12 @@ def exchange_override_keyboard(expense_id: str | None = None) -> InlineKeyboardM
     )
 
 
+def amount_currency_keyboard(base_currency: str, default_currency: str) -> InlineKeyboardMarkup | None:
+    if base_currency == default_currency:
+        return None
+    return InlineKeyboardMarkup([[InlineKeyboardButton(f"Use {base_currency} instead", callback_data="expense:use-base-currency")]])
+
+
 def member_toggle_keyboard(action_prefix: str, members: list[Member], selected_ids: set[str], done_callback: str) -> InlineKeyboardMarkup:
     rows = []
     for member in members:
@@ -190,6 +197,44 @@ async def add_expense(update: Any, context: Any) -> None:
     _drafts(context)[_draft_key(update)] = draft
     custom_categories = [category.name for category in _category_repository(context).list_custom_categories(trip.id)]
     await update.message.reply_text("Pick a category.", reply_markup=category_keyboard(custom_categories))
+
+
+async def start_button_expense(update: Any, context: Any) -> None:
+    trip_repository: TripRepository = context.application.bot_data["trip_repository"]
+    member_repository: MemberRepository = context.application.bot_data["member_repository"]
+    readable_trip = trip_repository.get_readable_trip(update.effective_chat.id)
+    if readable_trip is not None and readable_trip.status == "archived":
+        await update.message.reply_text(ARCHIVED_TRIP_READ_ONLY_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
+        return
+    trip = trip_repository.get_active_trip(update.effective_chat.id)
+    if trip is None:
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
+        return
+    members = member_repository.list_members(trip.id)
+    if not members:
+        await update.message.reply_text(NO_MEMBERS_MESSAGE, reply_markup=active_menu())
+        return
+    payer = _find_member_for_user(members, update.effective_user.id) or members[0]
+    draft = {
+        "trip_id": trip.id,
+        "base_currency": trip.base_currency,
+        "entry_currency": trip.default_expense_currency,
+        "expense_date": date.today().isoformat(),
+        "split_method": "equal",
+        "split_member_ids": [member.id for member in members],
+        "created_by_telegram_id": update.effective_user.id,
+        "created_by_display_name": display_name_for_user(update.effective_user),
+        "payer_member_id": payer.id,
+        "payer_name": payer.display_name,
+        "exact_shares": {},
+        "button_flow": True,
+        "flow": "expense_amount",
+    }
+    _drafts(context)[_draft_key(update)] = draft
+    await update.message.reply_text(
+        f"How much was it? I will use {trip.default_expense_currency}.",
+        reply_markup=amount_currency_keyboard(trip.base_currency, trip.default_expense_currency),
+    )
 
 
 async def refund_command(update: Any, context: Any) -> None:
@@ -266,6 +311,15 @@ async def expense_callback(update: Any, context: Any) -> None:
         await query.answer("Trip amount")
         await query.message.reply_text(f"Enter the exact {draft['base_currency']} amount.")
         return
+    if data == "expense:use-base-currency":
+        if draft is None:
+            await query.answer("Start with Add expense.")
+            return
+        draft["entry_currency"] = draft["base_currency"]
+        draft["flow"] = "expense_amount"
+        await query.answer(f"Using {draft['base_currency']}")
+        await query.message.reply_text(f"Okay, send the amount in {draft['base_currency']}.")
+        return
     if data == "expense:delete-cancel":
         await query.answer("Cancelled")
         await query.message.reply_text("Cancelled. Nothing was deleted.")
@@ -283,7 +337,10 @@ async def expense_callback(update: Any, context: Any) -> None:
     if data.startswith("expense:category:"):
         draft["category"] = data.rsplit(":", 1)[-1]
         await query.answer("Category set.")
-        await _reply_confirmation(query, context, draft)
+        if draft.get("button_flow"):
+            await _ask_split_members(query, context, draft)
+        else:
+            await _reply_confirmation(query, context, draft)
     elif data == "expense:category-custom":
         draft["flow"] = "custom_category"
         await query.answer("Custom category")
@@ -294,6 +351,22 @@ async def expense_callback(update: Any, context: Any) -> None:
         _drafts(context).pop(_draft_key(update), None)
         await query.answer("Cancelled.")
         await query.message.reply_text("Cancelled. Nothing was saved.")
+    elif data.startswith("expense:split-toggle:"):
+        member_id = data.rsplit(":", 1)[-1]
+        selected = set(draft.get("split_member_ids") or [])
+        if member_id in selected:
+            selected.remove(member_id)
+        else:
+            selected.add(member_id)
+        draft["split_member_ids"] = list(selected)
+        await query.answer("Updated")
+        await _ask_split_members(query, context, draft)
+    elif data == "expense:split-done":
+        if not draft.get("split_member_ids"):
+            await query.answer("Choose at least one person.")
+            return
+        await query.answer("Split set")
+        await _reply_confirmation(query, context, draft)
     elif data == "expense:details":
         await query.answer("Details")
         await query.message.reply_text(
@@ -416,6 +489,12 @@ async def expense_callback(update: Any, context: Any) -> None:
 async def exact_amount_message(update: Any, context: Any) -> None:
     draft = _drafts(context).get(_draft_key(update))
     if not draft:
+        return
+    if draft.get("flow") == "expense_amount":
+        await _button_expense_amount_message(update, context, draft)
+        return
+    if draft.get("flow") == "expense_description":
+        await _button_expense_description_message(update, context, draft)
         return
     if draft.get("flow") == "custom_category":
         await _custom_category_message(update, context, draft)
@@ -738,8 +817,63 @@ async def _entry_override_message(update: Any, context: Any, draft: dict) -> Non
     draft["base_money"] = base
     draft["exchange_rate"] = rate
     draft.pop("flow", None)
+    if draft.get("button_flow") and not draft.get("description"):
+        draft["flow"] = "expense_description"
+        await update.message.reply_text("What was it for?")
+    else:
+        custom_categories = [category.name for category in _category_repository(context).list_custom_categories(draft["trip_id"])]
+        await update.message.reply_text("Pick a category.", reply_markup=category_keyboard(custom_categories))
+
+
+async def _button_expense_amount_message(update: Any, context: Any, draft: dict) -> None:
+    currency = draft["entry_currency"]
+    try:
+        original = parse_money(update.message.text or "", currency)
+    except MoneyError as exc:
+        await update.message.reply_text(str(exc))
+        return
+    draft["original_money"] = original
+    try:
+        base, rate = convert_money(original, draft["base_currency"], draft["expense_date"], _exchange_provider(context))
+    except (LookupError, KeyError) as exc:
+        draft["flow"] = "entry_override_choice"
+        await update.message.reply_text(
+            f"I could not find an exchange rate for {original.currency}->{draft['base_currency']} on {draft['expense_date']}.\n"
+            f"You can enter the rate or the exact {draft['base_currency']} amount instead.",
+            reply_markup=exchange_override_keyboard(),
+        )
+        return
+    except MoneyError as exc:
+        await update.message.reply_text(str(exc))
+        return
+    draft["base_money"] = base
+    draft["exchange_rate"] = rate
+    draft["flow"] = "expense_description"
+    await update.message.reply_text("What was it for?")
+
+
+async def _button_expense_description_message(update: Any, context: Any, draft: dict) -> None:
+    description = (update.message.text or "").strip()
+    if not description:
+        await update.message.reply_text("Send a short description, like lunch.")
+        return
+    draft["description"] = description
+    draft.pop("flow", None)
     custom_categories = [category.name for category in _category_repository(context).list_custom_categories(draft["trip_id"])]
     await update.message.reply_text("Pick a category.", reply_markup=category_keyboard(custom_categories))
+
+
+async def _ask_split_members(query: Any, context: Any, draft: dict) -> None:
+    members = _all_members(context, draft)
+    await query.message.reply_text(
+        "Who should split this?",
+        reply_markup=member_toggle_keyboard(
+            "expense:split-toggle",
+            members,
+            set(draft.get("split_member_ids") or []),
+            "expense:split-done",
+        ),
+    )
 
 
 async def _start_saved_override(update: Any, context: Any, expense_id: str, flow: str) -> None:

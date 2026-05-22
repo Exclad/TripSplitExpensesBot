@@ -13,6 +13,7 @@ def test_repository_can_create_and_fetch_active_trip_by_chat_id(trip_repository)
     assert fetched == trip
     assert fetched is not None
     assert fetched.base_currency == "SGD"
+    assert fetched.default_expense_currency == "SGD"
     assert fetched.created_by_telegram_id == 42
     assert fetched.created_at
     assert fetched.updated_at
@@ -23,6 +24,17 @@ def test_second_active_trip_in_same_chat_is_rejected(trip_repository):
 
     with pytest.raises(ActiveTripExistsError):
         trip_repository.create_trip(-100, "Korea 2025", "SGD", 42)
+
+
+def test_repository_stores_default_expense_currency(trip_repository):
+    trip = trip_repository.create_trip(-100, "Korea 2026", "sgd", 42, default_expense_currency="krw")
+
+    fetched = trip_repository.get_active_trip(-100)
+
+    assert fetched == trip
+    assert fetched is not None
+    assert fetched.base_currency == "SGD"
+    assert fetched.default_expense_currency == "KRW"
 
 
 def test_archived_trip_allows_new_active_trip(trip_repository):

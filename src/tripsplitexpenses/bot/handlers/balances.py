@@ -4,6 +4,7 @@ from typing import Any
 
 from tripsplitexpenses.balances import calculate_trip_balance, category_breakdown, person_audit_rows
 from tripsplitexpenses.bot.copy import MISSING_TRIP_MESSAGE
+from tripsplitexpenses.bot.menu import menu_for_chat
 from tripsplitexpenses.bot.formatters import (
     format_audit_menu,
     format_balance_summary,
@@ -68,10 +69,14 @@ def expense_page_keyboard(offset: int, page_size: int, total: int) -> InlineKeyb
 
 
 async def balance_command(update: Any, context: Any) -> None:
+    await reply_balance_summary(update, context)
+
+
+async def reply_balance_summary(update: Any, context: Any) -> None:
     trip_repository: TripRepository = context.application.bot_data["trip_repository"]
     trip = trip_repository.get_readable_trip(update.effective_chat.id)
     if trip is None:
-        await update.message.reply_text(MISSING_TRIP_MESSAGE)
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
         return
 
     member_repository: MemberRepository = context.application.bot_data["member_repository"]
@@ -79,6 +84,41 @@ async def balance_command(update: Any, context: Any) -> None:
     expenses = _expense_repository(context).list_expenses(trip.id)
     summary = calculate_trip_balance(members=members, expenses=expenses, base_currency=trip.base_currency)
     await update.message.reply_text(format_balance_summary(summary), reply_markup=balance_keyboard())
+
+
+async def reply_person_breakdown(update: Any, context: Any) -> None:
+    trip_repository: TripRepository = context.application.bot_data["trip_repository"]
+    member_repository: MemberRepository = context.application.bot_data["member_repository"]
+    trip = trip_repository.get_readable_trip(update.effective_chat.id)
+    if trip is None:
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
+        return
+    members = member_repository.list_members(trip.id)
+    expenses = _expense_repository(context).list_expenses(trip.id)
+    summary = calculate_trip_balance(members=members, expenses=expenses, base_currency=trip.base_currency)
+    await update.message.reply_text(format_person_breakdown(summary), reply_markup=menu_for_chat(context, update.effective_chat.id))
+
+
+async def reply_expense_list(update: Any, context: Any) -> None:
+    trip_repository: TripRepository = context.application.bot_data["trip_repository"]
+    member_repository: MemberRepository = context.application.bot_data["member_repository"]
+    trip = trip_repository.get_readable_trip(update.effective_chat.id)
+    if trip is None:
+        await update.message.reply_text(MISSING_TRIP_MESSAGE, reply_markup=menu_for_chat(context, update.effective_chat.id))
+        return
+    members = member_repository.list_members(trip.id)
+    expenses = _expense_repository(context).list_expenses(trip.id)
+    name_by_member_id = {member.id: member.display_name for member in members}
+    page_size = 10
+    page = expenses[:page_size]
+    keyboard = expense_page_keyboard(0, page_size, len(expenses))
+    if keyboard is None:
+        await update.message.reply_text(
+            format_expense_list(page, name_by_member_id, offset=0, total=len(expenses)),
+            reply_markup=menu_for_chat(context, update.effective_chat.id),
+        )
+    else:
+        await update.message.reply_text(format_expense_list(page, name_by_member_id, offset=0, total=len(expenses)), reply_markup=keyboard)
 
 
 async def balance_callback(update: Any, context: Any) -> None:

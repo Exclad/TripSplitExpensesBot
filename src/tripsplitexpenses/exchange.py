@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import json
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 from tripsplitexpenses.money import Money, normalize_currency
 
@@ -16,12 +19,39 @@ class ExchangeRate:
 
 
 class ExchangeRateProvider:
+    timeout_seconds = 8
+
     def get_rate(self, from_currency: str, to_currency: str, date: str) -> ExchangeRate:
         from_code = normalize_currency(from_currency)
         to_code = normalize_currency(to_currency)
         if from_code == to_code:
             return ExchangeRate(from_code, to_code, Decimal("1"), date, "identity")
-        raise LookupError(f"No exchange rate configured for {from_code}->{to_code} on {date}.")
+        return self._get_remote_rate(from_code, to_code, date)
+
+    def _get_remote_rate(self, from_code: str, to_code: str, date: str) -> ExchangeRate:
+        errors: list[str] = []
+        for rate_date, url in [
+            (date, f"https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/{date}/currencies/{from_code.lower()}/{to_code.lower()}.json"),
+            ("latest", f"https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/latest/currencies/{from_code.lower()}/{to_code.lower()}.json"),
+        ]:
+            try:
+                with urlopen(url, timeout=self.timeout_seconds) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                rate = Decimal(str(payload[to_code.lower()]))
+                provider_date = str(payload.get("date") or rate_date)
+                return ExchangeRate(from_code, to_code, rate, provider_date, "currency-api")
+            except (HTTPError, URLError, TimeoutError, KeyError, json.JSONDecodeError, InvalidOperation) as exc:
+                errors.append(str(exc))
+
+        try:
+            with urlopen(f"https://open.er-api.com/v6/latest/{from_code}", timeout=self.timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            rate = Decimal(str(payload["rates"][to_code]))
+            provider_date = str(payload.get("time_last_update_utc") or "latest")
+            return ExchangeRate(from_code, to_code, rate, provider_date, "open.er-api")
+        except (HTTPError, URLError, TimeoutError, KeyError, json.JSONDecodeError, InvalidOperation) as exc:
+            errors.append(str(exc))
+        raise LookupError(f"No exchange rate available for {from_code}->{to_code} on {date}.")
 
 
 class FixedExchangeRateProvider(ExchangeRateProvider):

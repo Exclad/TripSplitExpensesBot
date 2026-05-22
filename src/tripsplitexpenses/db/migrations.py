@@ -153,4 +153,6 @@ def run_migrations(connection: sqlite3.Connection) -> None:
     _add_column(connection, "expenses", "entry_type", "TEXT NOT NULL DEFAULT 'expense'")
     _add_column(connection, "expenses", "linked_expense_id", "TEXT")
     _add_column(connection, "expenses", "note", "TEXT")
+    _add_column(connection, "trips", "default_expense_currency", "TEXT")
+    connection.execute("UPDATE trips SET default_expense_currency = base_currency WHERE default_expense_currency IS NULL")
     connection.commit()

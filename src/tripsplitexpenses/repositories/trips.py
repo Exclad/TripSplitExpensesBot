@@ -24,6 +24,7 @@ class Trip:
     telegram_chat_id: int
     name: str
     base_currency: str
+    default_expense_currency: str
     status: str
     created_at: str
     updated_at: str
@@ -44,6 +45,7 @@ def _trip_from_row(row: sqlite3.Row | None) -> Trip | None:
         telegram_chat_id=row["telegram_chat_id"],
         name=row["name"],
         base_currency=row["base_currency"],
+        default_expense_currency=row["default_expense_currency"] or row["base_currency"],
         status=row["status"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -57,13 +59,23 @@ class TripRepository:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
 
-    def create_trip(self, telegram_chat_id: int, name: str, base_currency: str, created_by_telegram_id: int) -> Trip:
+    def create_trip(
+        self,
+        telegram_chat_id: int,
+        name: str,
+        base_currency: str,
+        created_by_telegram_id: int,
+        default_expense_currency: str | None = None,
+    ) -> Trip:
         timestamp = _now()
+        base_code = _normalize_currency(base_currency)
+        default_code = _normalize_currency(default_expense_currency or base_code)
         trip = Trip(
             id=str(uuid.uuid4()),
             telegram_chat_id=telegram_chat_id,
             name=name.strip(),
-            base_currency=base_currency.strip().upper(),
+            base_currency=base_code,
+            default_expense_currency=default_code,
             status="active",
             created_at=timestamp,
             updated_at=timestamp,
@@ -73,17 +85,18 @@ class TripRepository:
             self.connection.execute(
                 """
                 INSERT INTO trips (
-                    id, telegram_chat_id, name, base_currency, status,
+                    id, telegram_chat_id, name, base_currency, default_expense_currency, status,
                     created_at, updated_at, created_by_telegram_id,
                     archived_at, archived_by_telegram_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     trip.id,
                     trip.telegram_chat_id,
                     trip.name,
                     trip.base_currency,
+                    trip.default_expense_currency,
                     trip.status,
                     trip.created_at,
                     trip.updated_at,
@@ -174,3 +187,10 @@ class TripRepository:
         if reopened is None:
             raise TripNotFoundError("Trip not found.")
         return reopened
+
+
+def _normalize_currency(currency: str) -> str:
+    code = currency.strip().upper()
+    if len(code) != 3 or not code.isalpha():
+        raise ValueError("Use a 3-letter currency code like SGD or KRW.")
+    return code

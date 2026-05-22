@@ -7,6 +7,7 @@ from tripsplitexpenses.bot.handlers.categories import categories_command
 from tripsplitexpenses.bot.handlers.expenses import add_expense, correction_command, exact_amount_message, expense_callback, refund_command
 from tripsplitexpenses.bot.handlers.help import help_callback, help_command
 from tripsplitexpenses.bot.handlers.members import join_trip_callback, member_callback, members_command
+from tripsplitexpenses.bot.handlers.navigation import text_router
 from tripsplitexpenses.bot.handlers.trips import archive_command, newtrip, reopen_command, trip_callback, trip_status
 from tripsplitexpenses.db.connection import connect
 from tripsplitexpenses.db.migrations import run_migrations
@@ -47,10 +48,10 @@ def build_application(settings: Settings):
     application.add_handler(CallbackQueryHandler(join_trip_callback, pattern=f"^{JOIN_CALLBACK_DATA}$"))
     application.add_handler(CallbackQueryHandler(member_callback, pattern=r"^members:"))
     application.add_handler(CallbackQueryHandler(help_callback, pattern=r"^help:"))
-    application.add_handler(CallbackQueryHandler(trip_callback, pattern=r"^trip:(archive|reopen):"))
+    application.add_handler(CallbackQueryHandler(trip_callback, pattern=r"^trip:(archive|reopen|setup):"))
     application.add_handler(CallbackQueryHandler(balance_callback, pattern=r"^balance:"))
     application.add_handler(CallbackQueryHandler(expense_callback, pattern=r"^expense:"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, exact_amount_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
     return application
 
 
