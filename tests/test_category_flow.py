@@ -30,6 +30,7 @@ async def test_custom_category_during_add_returns_to_confirmation(trip_repositor
     custom = fake_callback_update("expense:category-custom", user=fake_user(101, "Alex", "Alex"))
     await expense_callback(custom, context)
     assert "category" in custom.callback_query.message.replies[0]["text"].lower()
+    assert _is_force_reply(custom.callback_query.message.replies[0]["reply_markup"])
 
     message = fake_message_update("Coffee", user=fake_user(101, "Alex", "Alex"))
     await exact_amount_message(message, context)
@@ -52,3 +53,7 @@ async def test_categories_command_manages_trip_categories(trip_repository, membe
     assert "Added category: Coffee" in add.message.replies[0]["text"]
     assert "Renamed category to: Dessert" in rename.message.replies[0]["text"]
     assert "Deleted category: Dessert" in delete.message.replies[0]["text"]
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True

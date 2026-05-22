@@ -13,6 +13,7 @@ from tripsplitexpenses.repositories.categories import CategoryRepository
 from tripsplitexpenses.repositories.expenses import ExpenseRepository
 from tripsplitexpenses.bot.handlers.members import display_name_for_user
 from tripsplitexpenses.bot.menu import active_menu, menu_for_chat
+from tripsplitexpenses.bot.reply import force_reply
 from tripsplitexpenses.repositories.members import Member, MemberRepository
 from tripsplitexpenses.repositories.trips import TripRepository
 
@@ -160,7 +161,7 @@ async def add_expense(update: Any, context: Any) -> None:
     try:
         original = parse_money(amount_text, currency)
     except MoneyError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=force_reply(f"Amount in {currency}"))
         return
     expense_date = date.today().isoformat()
     draft = {
@@ -231,9 +232,20 @@ async def start_button_expense(update: Any, context: Any) -> None:
         "flow": "expense_amount",
     }
     _drafts(context)[_draft_key(update)] = draft
+    currency_switch = amount_currency_keyboard(trip.base_currency, trip.default_expense_currency)
+    if currency_switch is not None:
+        await update.message.reply_text(
+            f"How much was it? I will use {trip.default_expense_currency}.",
+            reply_markup=currency_switch,
+        )
+        await update.message.reply_text(
+            f"Send the amount in {trip.default_expense_currency}.",
+            reply_markup=force_reply(f"Amount in {trip.default_expense_currency}"),
+        )
+        return
     await update.message.reply_text(
         f"How much was it? I will use {trip.default_expense_currency}.",
-        reply_markup=amount_currency_keyboard(trip.base_currency, trip.default_expense_currency),
+        reply_markup=force_reply(f"Amount in {trip.default_expense_currency}"),
     )
 
 
@@ -301,7 +313,10 @@ async def expense_callback(update: Any, context: Any) -> None:
             return
         draft["flow"] = "entry_override_rate"
         await query.answer("Manual rate")
-        await query.message.reply_text(f"Enter the rate: 1 {draft['original_money'].currency} = ? {draft['base_currency']}")
+        await query.message.reply_text(
+            f"Enter the rate: 1 {draft['original_money'].currency} = ? {draft['base_currency']}",
+            reply_markup=force_reply("Exchange rate"),
+        )
         return
     if data == "expense:override-equivalent":
         if draft is None:
@@ -309,7 +324,10 @@ async def expense_callback(update: Any, context: Any) -> None:
             return
         draft["flow"] = "entry_override_equivalent"
         await query.answer("Trip amount")
-        await query.message.reply_text(f"Enter the exact {draft['base_currency']} amount.")
+        await query.message.reply_text(
+            f"Enter the exact {draft['base_currency']} amount.",
+            reply_markup=force_reply(f"Amount in {draft['base_currency']}"),
+        )
         return
     if data == "expense:use-base-currency":
         if draft is None:
@@ -318,7 +336,10 @@ async def expense_callback(update: Any, context: Any) -> None:
         draft["entry_currency"] = draft["base_currency"]
         draft["flow"] = "expense_amount"
         await query.answer(f"Using {draft['base_currency']}")
-        await query.message.reply_text(f"Okay, send the amount in {draft['base_currency']}.")
+        await query.message.reply_text(
+            f"Okay, send the amount in {draft['base_currency']}.",
+            reply_markup=force_reply(f"Amount in {draft['base_currency']}"),
+        )
         return
     if data == "expense:delete-cancel":
         await query.answer("Cancelled")
@@ -328,7 +349,7 @@ async def expense_callback(update: Any, context: Any) -> None:
         _, _, expense_id, field_name = data.split(":", 3)
         _drafts(context)[_draft_key(update)] = {"flow": "edit", "edit_expense_id": expense_id, "edit_field": field_name}
         await query.answer("Edit")
-        await query.message.reply_text(f"Send the new {field_name}.")
+        await query.message.reply_text(f"Send the new {field_name}.", reply_markup=force_reply(f"New {field_name}"))
         return
     if draft is None:
         await query.answer("Start with /add.")
@@ -344,7 +365,7 @@ async def expense_callback(update: Any, context: Any) -> None:
     elif data == "expense:category-custom":
         draft["flow"] = "custom_category"
         await query.answer("Custom category")
-        await query.message.reply_text("What should the category be called?")
+        await query.message.reply_text("What should the category be called?", reply_markup=force_reply("Category name"))
     elif data == "expense:save":
         await _save_draft(update, context, draft)
     elif data == "expense:cancel":
@@ -419,11 +440,11 @@ async def expense_callback(update: Any, context: Any) -> None:
         draft["itemized_lines"] = []
         draft["shared_charges"] = []
         await query.answer("Itemize")
-        await query.message.reply_text("What is the first item?")
+        await query.message.reply_text("What is the first item?", reply_markup=force_reply("Item name"))
     elif data == "expense:item-add":
         draft["flow"] = "item_name"
         await query.answer("Add item")
-        await query.message.reply_text("What is the item?")
+        await query.message.reply_text("What is the item?", reply_markup=force_reply("Item name"))
     elif data.startswith("expense:item-member-toggle:"):
         member_id = data.rsplit(":", 1)[-1]
         selected = set(draft.get("current_item_member_ids") or [])
@@ -450,7 +471,7 @@ async def expense_callback(update: Any, context: Any) -> None:
     elif data == "expense:item-shared":
         draft["flow"] = "shared_charge_amount"
         await query.answer("Shared charge")
-        await query.message.reply_text("How much are the shared charges?")
+        await query.message.reply_text("How much are the shared charges?", reply_markup=force_reply("Shared charge amount"))
     elif data == "expense:item-done":
         await query.answer("Itemized")
         await _reply_itemized_confirmation(query, context, draft)
@@ -468,12 +489,15 @@ async def expense_callback(update: Any, context: Any) -> None:
         draft["recipient_member_id"] = data.rsplit(":", 1)[-1]
         draft["flow"] = "refund_amount"
         await query.answer("Recipient selected")
-        await query.message.reply_text("How much was refunded?")
+        await query.message.reply_text("How much was refunded?", reply_markup=force_reply("Refund amount"))
     elif data.startswith("expense:correction-pick:"):
         draft["linked_expense_id"] = data.rsplit(":", 1)[-1]
         draft["flow"] = "correction_amount"
         await query.answer("Expense selected")
-        await query.message.reply_text("What is the correction amount? Use a minus sign for a reduction.")
+        await query.message.reply_text(
+            "What is the correction amount? Use a minus sign for a reduction.",
+            reply_markup=force_reply("Correction amount"),
+        )
     elif data == "expense:auto-adjust":
         adjusted = auto_adjust_rounding(draft["base_money"].amount_minor, draft.get("exact_shares", {}))
         if adjusted is None:
@@ -527,12 +551,16 @@ async def exact_amount_message(update: Any, context: Any) -> None:
     try:
         amount = parse_money(update.message.text or "", draft["base_money"].currency)
     except MoneyError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=force_reply(f"Amount for {member.display_name}"))
         return
     draft["exact_shares"][member.id] = amount.amount_minor
     draft["exact_index"] = index + 1
     if draft["exact_index"] < len(members):
-        await update.message.reply_text(f"How much for {members[draft['exact_index']].display_name}?")
+        next_member = members[draft["exact_index"]]
+        await update.message.reply_text(
+            f"How much for {next_member.display_name}?",
+            reply_markup=force_reply(f"Amount for {next_member.display_name}"),
+        )
         return
     difference = draft["base_money"].amount_minor - sum(draft["exact_shares"].values())
     if difference:
@@ -605,7 +633,10 @@ async def _ask_next_exact_amount(query: Any, context: Any, draft: dict) -> None:
     if not members:
         await query.message.reply_text("Choose at least one person for the split.")
         return
-    await query.message.reply_text(f"How much for {members[0].display_name}?")
+    await query.message.reply_text(
+        f"How much for {members[0].display_name}?",
+        reply_markup=force_reply(f"Amount for {members[0].display_name}"),
+    )
 
 
 async def _ask_next_payer_amount(query: Any, context: Any, draft: dict) -> None:
@@ -613,7 +644,10 @@ async def _ask_next_payer_amount(query: Any, context: Any, draft: dict) -> None:
     if not payers:
         await query.message.reply_text("Choose at least one payer.")
         return
-    await query.message.reply_text(f"How much did {payers[0].display_name} pay?")
+    await query.message.reply_text(
+        f"How much did {payers[0].display_name} pay?",
+        reply_markup=force_reply(f"Paid by {payers[0].display_name}"),
+    )
 
 
 async def _payer_amount_message(update: Any, context: Any, draft: dict) -> None:
@@ -625,12 +659,16 @@ async def _payer_amount_message(update: Any, context: Any, draft: dict) -> None:
     try:
         amount = parse_money(update.message.text or "", draft["original_money"].currency)
     except MoneyError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=force_reply(f"Paid by {member.display_name}"))
         return
     draft["payer_shares"][member.id] = amount.amount_minor
     draft["payer_index"] = index + 1
     if draft["payer_index"] < len(payers):
-        await update.message.reply_text(f"How much did {payers[draft['payer_index']].display_name} pay?")
+        next_payer = payers[draft["payer_index"]]
+        await update.message.reply_text(
+            f"How much did {next_payer.display_name} pay?",
+            reply_markup=force_reply(f"Paid by {next_payer.display_name}"),
+        )
         return
     difference = draft["original_money"].amount_minor - sum(draft["payer_shares"].values())
     if difference:
@@ -653,7 +691,7 @@ async def _custom_category_message(update: Any, context: Any, draft: dict) -> No
             update.effective_user.id,
         )
     except ValueError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=force_reply("Category name"))
         return
     draft["category"] = category.name
     draft.pop("flow", None)
@@ -664,17 +702,17 @@ async def _itemized_message(update: Any, context: Any, draft: dict) -> None:
     if draft["flow"] == "item_name":
         name = (update.message.text or "").strip()
         if not name:
-            await update.message.reply_text("Enter an item name.")
+            await update.message.reply_text("Enter an item name.", reply_markup=force_reply("Item name"))
             return
         draft["current_item_name"] = name
         draft["flow"] = "item_amount"
-        await update.message.reply_text(f"How much was {name}?")
+        await update.message.reply_text(f"How much was {name}?", reply_markup=force_reply(f"Amount for {name}"))
         return
     if draft["flow"] == "item_amount":
         try:
             amount = parse_money(update.message.text or "", draft["base_money"].currency)
         except MoneyError as exc:
-            await update.message.reply_text(str(exc))
+            await update.message.reply_text(str(exc), reply_markup=force_reply("Item amount"))
             return
         draft["current_item_amount_minor"] = amount.amount_minor
         draft["current_item_member_ids"] = []
@@ -693,7 +731,7 @@ async def _itemized_message(update: Any, context: Any, draft: dict) -> None:
         try:
             amount = parse_money(update.message.text or "", draft["base_money"].currency)
         except MoneyError as exc:
-            await update.message.reply_text(str(exc))
+            await update.message.reply_text(str(exc), reply_markup=force_reply("Shared charge amount"))
             return
         draft.setdefault("shared_charges", []).append({"name": "Shared charges", "base_amount_minor": amount.amount_minor})
         draft.pop("flow", None)
@@ -727,7 +765,7 @@ async def _edit_message(update: Any, context: Any, draft: dict) -> None:
             actor_display_name=display_name_for_user(update.effective_user),
         )
     except ValueError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=force_reply(f"New {field_name}"))
         return
     _drafts(context).pop(_draft_key(update), None)
     await update.message.reply_text(f"Updated: {updated.description}")
@@ -747,7 +785,7 @@ async def _adjustment_message(update: Any, context: Any, draft: dict) -> None:
         try:
             money = parse_money(update.message.text or "", trip.base_currency)
         except MoneyError as exc:
-            await update.message.reply_text(str(exc))
+            await update.message.reply_text(str(exc), reply_markup=force_reply("Refund amount"))
             return
         rate = _exchange_provider(context).get_rate(trip.base_currency, trip.base_currency, date.today().isoformat())
         expense = _expense_repository(context).create_refund(
@@ -771,12 +809,12 @@ async def _adjustment_message(update: Any, context: Any, draft: dict) -> None:
         try:
             money = parse_money(raw.removeprefix("-"), trip.base_currency)
         except MoneyError as exc:
-            await update.message.reply_text(str(exc))
+            await update.message.reply_text(str(exc), reply_markup=force_reply("Correction amount"))
             return
         draft["correction_amount_minor"] = money.amount_minor * sign
         draft["correction_currency"] = money.currency
         draft["flow"] = "correction_note"
-        await update.message.reply_text("What is the correction for?")
+        await update.message.reply_text("What is the correction for?", reply_markup=force_reply("Correction note"))
         return
     if draft["flow"] == "correction_note":
         member = _find_member_for_user(_all_members(context, draft), update.effective_user.id) or _all_members(context, draft)[0]
@@ -812,14 +850,17 @@ async def _entry_override_message(update: Any, context: Any, draft: dict) -> Non
             base_money = parse_money(update.message.text or "", draft["base_currency"])
             base, rate = convert_with_exact_base(draft["original_money"], base_money, draft["expense_date"])
     except (ValueError, MoneyError) as exc:
-        await update.message.reply_text(str(exc))
+        if draft["flow"] == "entry_override_rate":
+            await update.message.reply_text(str(exc), reply_markup=force_reply("Exchange rate"))
+        else:
+            await update.message.reply_text(str(exc), reply_markup=force_reply(f"Amount in {draft['base_currency']}"))
         return
     draft["base_money"] = base
     draft["exchange_rate"] = rate
     draft.pop("flow", None)
     if draft.get("button_flow") and not draft.get("description"):
         draft["flow"] = "expense_description"
-        await update.message.reply_text("What was it for?")
+        await update.message.reply_text("What was it for?", reply_markup=force_reply("Description"))
     else:
         custom_categories = [category.name for category in _category_repository(context).list_custom_categories(draft["trip_id"])]
         await update.message.reply_text("Pick a category.", reply_markup=category_keyboard(custom_categories))
@@ -830,7 +871,7 @@ async def _button_expense_amount_message(update: Any, context: Any, draft: dict)
     try:
         original = parse_money(update.message.text or "", currency)
     except MoneyError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=force_reply(f"Amount in {currency}"))
         return
     draft["original_money"] = original
     try:
@@ -849,13 +890,13 @@ async def _button_expense_amount_message(update: Any, context: Any, draft: dict)
     draft["base_money"] = base
     draft["exchange_rate"] = rate
     draft["flow"] = "expense_description"
-    await update.message.reply_text("What was it for?")
+    await update.message.reply_text("What was it for?", reply_markup=force_reply("Description"))
 
 
 async def _button_expense_description_message(update: Any, context: Any, draft: dict) -> None:
     description = (update.message.text or "").strip()
     if not description:
-        await update.message.reply_text("Send a short description, like lunch.")
+        await update.message.reply_text("Send a short description, like lunch.", reply_markup=force_reply("Description"))
         return
     draft["description"] = description
     draft.pop("flow", None)
@@ -887,9 +928,15 @@ async def _start_saved_override(update: Any, context: Any, expense_id: str, flow
     _drafts(context)[_draft_key(update)] = {"flow": flow, "override_expense_id": expense_id}
     await query.answer("Override rate")
     if flow == "saved_override_rate":
-        await query.message.reply_text(f"Enter the rate: 1 {expense.original_currency} = ? {expense.base_currency}")
+        await query.message.reply_text(
+            f"Enter the rate: 1 {expense.original_currency} = ? {expense.base_currency}",
+            reply_markup=force_reply("Exchange rate"),
+        )
     else:
-        await query.message.reply_text(f"Enter the exact {expense.base_currency} amount.")
+        await query.message.reply_text(
+            f"Enter the exact {expense.base_currency} amount.",
+            reply_markup=force_reply(f"Amount in {expense.base_currency}"),
+        )
 
 
 async def _saved_override_message(update: Any, context: Any, draft: dict) -> None:
@@ -907,7 +954,10 @@ async def _saved_override_message(update: Any, context: Any, draft: dict) -> Non
             base_money = parse_money(update.message.text or "", expense.base_currency)
             base, rate = convert_with_exact_base(original, base_money, expense.expense_date)
     except (ValueError, MoneyError) as exc:
-        await update.message.reply_text(str(exc))
+        if draft["flow"] == "saved_override_rate":
+            await update.message.reply_text(str(exc), reply_markup=force_reply("Exchange rate"))
+        else:
+            await update.message.reply_text(str(exc), reply_markup=force_reply(f"Amount in {expense.base_currency}"))
         return
     updated = _expense_repository(context).override_exchange_rate(
         expense.id,

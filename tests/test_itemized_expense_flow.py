@@ -43,11 +43,16 @@ async def test_itemized_flow_saves_lines_and_details(trip_repository, member_rep
     context = _context(trip_repository, member_repository, expense_repository)
     start = await _start_itemized(context)
     assert "first item" in start.callback_query.message.replies[0]["text"]
+    assert _is_force_reply(start.callback_query.message.replies[0]["reply_markup"])
 
     await _add_item(context, Alex.id, "ramen", "20.00")
-    await expense_callback(fake_callback_update("expense:item-add", user=fake_user(101, "Alex", "Alex")), context)
+    item_add = fake_callback_update("expense:item-add", user=fake_user(101, "Alex", "Alex"))
+    await expense_callback(item_add, context)
+    assert _is_force_reply(item_add.callback_query.message.replies[0]["reply_markup"])
     await _add_item(context, Sam.id, "tea", "10.00")
-    await expense_callback(fake_callback_update("expense:item-shared", user=fake_user(101, "Alex", "Alex")), context)
+    shared = fake_callback_update("expense:item-shared", user=fake_user(101, "Alex", "Alex"))
+    await expense_callback(shared, context)
+    assert _is_force_reply(shared.callback_query.message.replies[0]["reply_markup"])
     await exact_amount_message(fake_message_update("1.01", user=fake_user(101, "Alex", "Alex")), context)
     confirm = fake_callback_update("expense:item-done", user=fake_user(101, "Alex", "Alex"))
     await expense_callback(confirm, context)
@@ -83,3 +88,7 @@ async def test_itemized_flow_offers_exact_split_after_several_items(trip_reposit
 
     buttons = last.callback_query.message.replies[0]["reply_markup"].inline_keyboard
     assert any(row[0].text == "Use exact split instead" for row in buttons)
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True

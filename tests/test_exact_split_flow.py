@@ -30,10 +30,12 @@ async def test_exact_split_prompts_each_selected_member(trip_repository, member_
 
     await expense_callback(exact_update, context)
     assert "How much for" in exact_update.callback_query.message.replies[0]["text"]
+    assert _is_force_reply(exact_update.callback_query.message.replies[0]["reply_markup"])
 
     first = fake_message_update("12.50", user=fake_user(101, "Alex", "Alex"))
     await exact_amount_message(first, context)
     assert "How much for Sam?" in first.message.replies[0]["text"]
+    assert _is_force_reply(first.message.replies[0]["reply_markup"])
 
     second = fake_message_update("12.50", user=fake_user(101, "Alex", "Alex"))
     await exact_amount_message(second, context)
@@ -73,3 +75,7 @@ async def test_details_callback_shows_exchange_metadata(trip_repository, member_
     await expense_callback(details_update, context)
 
     assert "Rate date:" in details_update.callback_query.message.replies[0]["text"]
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True

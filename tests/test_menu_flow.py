@@ -20,7 +20,7 @@ async def test_missing_trip_menu_exposes_setup_button(trip_repository, member_re
     await text_router(update, fake_context(trip_repository, member_repository))
 
     assert update.message.replies[0]["text"] == "What should we call this trip?"
-    assert _keyboard_text(update.message.replies[0]["reply_markup"]) == [[SETUP_TRIP, "Help"]]
+    assert getattr(update.message.replies[0]["reply_markup"], "force_reply", False) is True
 
 
 async def test_trip_status_exposes_active_menu(trip_repository, member_repository):

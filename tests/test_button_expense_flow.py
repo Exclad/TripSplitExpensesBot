@@ -34,10 +34,13 @@ async def test_button_expense_defaults_to_country_currency_and_saves(trip_reposi
 
     assert "I will use KRW" in start.message.replies[0]["text"]
     assert start.message.replies[0]["reply_markup"].inline_keyboard[0][0].text == "Use SGD instead"
+    assert start.message.replies[1]["text"] == "Send the amount in KRW."
+    assert _is_force_reply(start.message.replies[1]["reply_markup"])
 
     amount = fake_message_update("3500", user=fake_user(101, "alex", "alex"))
     await exact_amount_message(amount, context)
     assert amount.message.replies[0]["text"] == "What was it for?"
+    assert _is_force_reply(amount.message.replies[0]["reply_markup"])
 
     description = fake_message_update("lunch", user=fake_user(101, "alex", "alex"))
     await exact_amount_message(description, context)
@@ -69,6 +72,7 @@ async def test_button_expense_can_switch_to_base_currency_before_amount(trip_rep
     await expense_callback(switch, context)
 
     assert "send the amount in SGD" in switch.callback_query.message.replies[0]["text"]
+    assert _is_force_reply(switch.callback_query.message.replies[0]["reply_markup"])
 
     amount = fake_message_update("12.50", user=fake_user(101, "alex", "alex"))
     await exact_amount_message(amount, context)
@@ -76,3 +80,7 @@ async def test_button_expense_can_switch_to_base_currency_before_amount(trip_rep
     draft = context.application.bot_data["expense_drafts"][(-100, 101)]
     assert draft["original_money"].currency == "SGD"
     assert draft["base_money"].amount_minor == 1250
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True

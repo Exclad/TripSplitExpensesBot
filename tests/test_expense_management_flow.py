@@ -32,7 +32,9 @@ async def test_edit_field_picker_updates_description(trip_repository, member_rep
     await expense_callback(picker, context)
     assert "What do you want to edit?" in picker.callback_query.message.replies[0]["text"]
 
-    await expense_callback(fake_callback_update(f"expense:edit-field:{expense.id}:description", user=fake_user(202, "friend", "Friend")), context)
+    edit_prompt = fake_callback_update(f"expense:edit-field:{expense.id}:description", user=fake_user(202, "friend", "Friend"))
+    await expense_callback(edit_prompt, context)
+    assert _is_force_reply(edit_prompt.callback_query.message.replies[0]["reply_markup"])
     message = fake_message_update("brunch", user=fake_user(202, "friend", "Friend"))
     await exact_amount_message(message, context)
 
@@ -80,3 +82,7 @@ async def test_details_prefer_mapped_member_name_for_audit_actor(trip_repository
     text = details.callback_query.message.replies[0]["text"]
     assert "Sam changed note" in text
     assert "Sam Real changed note" not in text
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True

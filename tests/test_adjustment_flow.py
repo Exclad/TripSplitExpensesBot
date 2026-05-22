@@ -32,7 +32,9 @@ async def test_refund_creates_linked_labeled_entry(trip_repository, member_repos
     assert "Which expense" in start.message.replies[0]["text"]
 
     await expense_callback(fake_callback_update(f"expense:refund-pick:{expense.id}", user=fake_user(101, "Alex", "Alex")), context)
-    await expense_callback(fake_callback_update(f"expense:refund-recipient:{Sam.id}", user=fake_user(101, "Alex", "Alex")), context)
+    refund_prompt = fake_callback_update(f"expense:refund-recipient:{Sam.id}", user=fake_user(101, "Alex", "Alex"))
+    await expense_callback(refund_prompt, context)
+    assert _is_force_reply(refund_prompt.callback_query.message.replies[0]["reply_markup"])
     await exact_amount_message(fake_message_update("5.00", user=fake_user(101, "Alex", "Alex")), context)
 
     refund = [item for item in expense_repository.list_expenses(trip.id) if item.entry_type == "refund"][0]
@@ -45,8 +47,12 @@ async def test_correction_creates_linked_labeled_entry(trip_repository, member_r
     trip, _, _, context, expense = await _saved_expense(trip_repository, member_repository, expense_repository)
     start = fake_message_update("/correction", user=fake_user(101, "Alex", "Alex"))
     await correction_command(start, context)
-    await expense_callback(fake_callback_update(f"expense:correction-pick:{expense.id}", user=fake_user(101, "Alex", "Alex")), context)
-    await exact_amount_message(fake_message_update("-2.00", user=fake_user(101, "Alex", "Alex")), context)
+    correction_prompt = fake_callback_update(f"expense:correction-pick:{expense.id}", user=fake_user(101, "Alex", "Alex"))
+    await expense_callback(correction_prompt, context)
+    assert _is_force_reply(correction_prompt.callback_query.message.replies[0]["reply_markup"])
+    note_prompt = fake_message_update("-2.00", user=fake_user(101, "Alex", "Alex"))
+    await exact_amount_message(note_prompt, context)
+    assert _is_force_reply(note_prompt.message.replies[0]["reply_markup"])
     await exact_amount_message(fake_message_update("coupon applied", user=fake_user(101, "Alex", "Alex")), context)
 
     correction = [item for item in expense_repository.list_expenses(trip.id) if item.entry_type == "correction"][0]
@@ -73,3 +79,7 @@ async def test_original_expense_details_show_refund_and_correction_history(trip_
     assert "History" in text
     assert "Refund recorded" in text
     assert "Correction recorded" in text
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True

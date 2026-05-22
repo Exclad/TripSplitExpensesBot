@@ -51,7 +51,9 @@ async def test_entry_manual_rate_continues_to_category_picker(trip_repository, m
     _trip_with_members(trip_repository, member_repository)
     context = _context(trip_repository, member_repository, expense_repository)
     await add_expense(fake_message_update("/add 1930 JPY ramen", user=fake_user(101, "Alex", "Alex")), context)
-    await expense_callback(fake_callback_update("expense:override-rate", user=fake_user(101, "Alex", "Alex")), context)
+    rate_prompt = fake_callback_update("expense:override-rate", user=fake_user(101, "Alex", "Alex"))
+    await expense_callback(rate_prompt, context)
+    assert _is_force_reply(rate_prompt.callback_query.message.replies[0]["reply_markup"])
     message = fake_message_update("0.008912", user=fake_user(101, "Alex", "Alex"))
 
     await exact_amount_message(message, context)
@@ -66,7 +68,9 @@ async def test_entry_exact_base_equivalent_continues_to_category_picker(trip_rep
     _trip_with_members(trip_repository, member_repository)
     context = _context(trip_repository, member_repository, expense_repository)
     await add_expense(fake_message_update("/add 1930 JPY ramen", user=fake_user(101, "Alex", "Alex")), context)
-    await expense_callback(fake_callback_update("expense:override-equivalent", user=fake_user(101, "Alex", "Alex")), context)
+    amount_prompt = fake_callback_update("expense:override-equivalent", user=fake_user(101, "Alex", "Alex"))
+    await expense_callback(amount_prompt, context)
+    assert _is_force_reply(amount_prompt.callback_query.message.replies[0]["reply_markup"])
     message = fake_message_update("17.20", user=fake_user(101, "Alex", "Alex"))
 
     await exact_amount_message(message, context)
@@ -89,7 +93,9 @@ async def test_saved_details_exposes_override_rate_button(trip_repository, membe
 
 async def test_after_save_override_updates_details_and_balance_totals(trip_repository, member_repository, expense_repository):
     trip, context, expense = await _saved_foreign_expense(trip_repository, member_repository, expense_repository)
-    await expense_callback(fake_callback_update(f"expense:override-rate:{expense.id}", user=fake_user(101, "Alex", "Alex")), context)
+    override_prompt = fake_callback_update(f"expense:override-rate:{expense.id}", user=fake_user(101, "Alex", "Alex"))
+    await expense_callback(override_prompt, context)
+    assert _is_force_reply(override_prompt.callback_query.message.replies[0]["reply_markup"])
     await exact_amount_message(fake_message_update("0.008912", user=fake_user(101, "Alex", "Alex")), context)
 
     updated = expense_repository.get_expense(expense.id)
@@ -112,3 +118,7 @@ async def test_archived_trip_blocks_saved_rate_override(trip_repository, member_
     await expense_callback(update, context)
 
     assert update.callback_query.message.replies[0]["text"] == ARCHIVED_TRIP_READ_ONLY_MESSAGE
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True

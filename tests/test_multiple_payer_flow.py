@@ -34,10 +34,12 @@ async def test_multiple_payer_flow_prompts_amounts_and_saves(trip_repository, me
     done = fake_callback_update("expense:payers-done", user=fake_user(101, "Alex", "Alex"))
     await expense_callback(done, context)
     assert "How much did Alex pay?" in done.callback_query.message.replies[0]["text"]
+    assert _is_force_reply(done.callback_query.message.replies[0]["reply_markup"])
 
     first = fake_message_update("14.87", user=fake_user(101, "Alex", "Alex"))
     await exact_amount_message(first, context)
     assert "How much did Sam pay?" in first.message.replies[0]["text"]
+    assert _is_force_reply(first.message.replies[0]["reply_markup"])
     second = fake_message_update("20.16", user=fake_user(101, "Alex", "Alex"))
     await exact_amount_message(second, context)
     assert "Paid by: Alex + Sam" in second.message.replies[0]["text"]
@@ -61,3 +63,7 @@ async def test_multiple_payer_mismatch_blocks_confirmation(trip_repository, memb
     await exact_amount_message(second, context)
 
     assert "Payer total does not match" in second.message.replies[0]["text"]
+
+
+def _is_force_reply(markup):
+    return getattr(markup, "force_reply", False) is True
