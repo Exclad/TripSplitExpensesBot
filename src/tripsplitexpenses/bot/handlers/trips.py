@@ -12,20 +12,15 @@ from tripsplitexpenses.bot.copy import (
     REOPEN_CONFIRM_MESSAGE,
 )
 from tripsplitexpenses.bot.menu import active_menu, menu_for_chat, setup_menu
+from tripsplitexpenses.bot.reply import force_reply
 from tripsplitexpenses.repositories.members import MemberRepository
 from tripsplitexpenses.repositories.expenses import ExpenseRepository
 from tripsplitexpenses.repositories.trips import ActiveTripExistsError, TripIsArchivedError, TripNotFoundError, TripRepository
 from tripsplitexpenses.money import Money, format_money
 
 try:
-    from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 except ImportError:  # pragma: no cover - tests use the lightweight fallback.
-
-    @dataclass(frozen=True)
-    class ForceReply:  # type: ignore[no-redef]
-        selective: bool = True
-        input_field_placeholder: str | None = None
-        force_reply: bool = True
 
     @dataclass(frozen=True)
     class InlineKeyboardButton:  # type: ignore[no-redef]
@@ -43,10 +38,6 @@ def _setup_drafts(context: Any) -> dict[tuple[int, int], dict]:
 
 def _draft_key(update: Any) -> tuple[int, int]:
     return (update.effective_chat.id, update.effective_user.id)
-
-
-def _force_reply(placeholder: str) -> ForceReply:
-    return ForceReply(selective=True, input_field_placeholder=placeholder)
 
 
 def parse_newtrip_args(text: str) -> tuple[str | None, str | None, str | None]:
@@ -104,7 +95,7 @@ async def start_setup(update: Any, context: Any) -> None:
         await update.message.reply_text(DUPLICATE_TRIP_MESSAGE, reply_markup=active_menu())
         return
     _setup_drafts(context)[_draft_key(update)] = {"flow": "setup_name"}
-    await update.message.reply_text("What should we call this trip?", reply_markup=_force_reply("Trip name"))
+    await update.message.reply_text("What should we call this trip?", reply_markup=force_reply("Trip name"))
 
 
 async def setup_message(update: Any, context: Any) -> bool:
@@ -118,35 +109,35 @@ async def setup_message(update: Any, context: Any) -> bool:
         return True
     if draft["flow"] == "setup_name":
         if not text:
-            await update.message.reply_text("Send a trip name, like Korea 2026.")
+            await update.message.reply_text("Send a trip name, like Korea 2026.", reply_markup=force_reply("Trip name"))
             return True
         draft["name"] = text
         draft["flow"] = "setup_base_currency"
         await update.message.reply_text(
             "What currency should settlements use? Send a 3-letter code like SGD.",
-            reply_markup=_force_reply("Settlement currency"),
+            reply_markup=force_reply("Settlement currency"),
         )
         return True
     if draft["flow"] == "setup_base_currency":
         if not _looks_like_currency(text):
-            await update.message.reply_text("Use a 3-letter currency code like SGD.", reply_markup=_force_reply("Settlement currency"))
+            await update.message.reply_text("Use a 3-letter currency code like SGD.", reply_markup=force_reply("Settlement currency"))
             return True
         draft["base_currency"] = text.upper()
         draft["flow"] = "setup_default_currency"
         await update.message.reply_text(
             "What currency will expenses usually be in? Send a 3-letter code like KRW.",
-            reply_markup=_force_reply("Default expense currency"),
+            reply_markup=force_reply("Default expense currency"),
         )
         return True
     if draft["flow"] == "setup_default_currency":
         if not _looks_like_currency(text):
-            await update.message.reply_text("Use a 3-letter currency code like KRW.", reply_markup=_force_reply("Default expense currency"))
+            await update.message.reply_text("Use a 3-letter currency code like KRW.", reply_markup=force_reply("Default expense currency"))
             return True
         draft["default_expense_currency"] = text.upper()
         draft["flow"] = "setup_members"
         await update.message.reply_text(
             "Who is coming? Send names separated by commas, or send Skip to add people later.",
-            reply_markup=_force_reply("Alex, Sam, Priya"),
+            reply_markup=force_reply("Alex, Sam, Priya"),
         )
         return True
     if draft["flow"] == "setup_members":
